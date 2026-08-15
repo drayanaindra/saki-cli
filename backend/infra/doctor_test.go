@@ -133,3 +133,34 @@ func TestDoctorService_Check_LeavesFilesystemUntouched(t *testing.T) {
 		t.Fatalf("doctor run left %d entr(ies) in the run-journal-style dir, want 0: %v", len(entries), entries)
 	}
 }
+
+// F2 slice 2, criterion 2.1: a missing BINARY must read differently from an unprovisioned PROFILE —
+// proven end to end through the REAL EngineProofChecker (not a fake), so a future edit that made the
+// two reasons collide would actually be caught. Only opencode is put on PATH; codex is genuinely
+// absent, and opencode's profile is genuinely provisioned so its "ok" isolates the codex row.
+func TestDoctorService_Check_CodexBinaryAbsent_DistinctFromProfileReason(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin) // codex is NOT here
+
+	profileDir := t.TempDir()
+	writeOpencodeProfile(t, profileDir, `{"plugin":["@saketek/saki-builder"]}`)
+
+	reports := usecase.NewDoctorService(EngineProofChecker{}).Check(&profileDir)
+	codex, opencode := reports[0], reports[1]
+
+	if opencode.Status != "ok" {
+		t.Fatalf("opencode = %+v, want status=ok (isolates the codex row below)", opencode)
+	}
+	if codex.Status != "failed" {
+		t.Fatalf("codex = %+v, want status=failed", codex)
+	}
+	if !strings.Contains(codex.Reason, "engine binary not found on PATH (codex)") {
+		t.Errorf("codex.Reason = %q, want it to name the missing binary", codex.Reason)
+	}
+	if strings.Contains(codex.Reason, "does not resolve @saketek/saki-builder") {
+		t.Errorf("codex.Reason = %q — a binary-absent reason must never read like a profile-unprovisioned one", codex.Reason)
+	}
+}
