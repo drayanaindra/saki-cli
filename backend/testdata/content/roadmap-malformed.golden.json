@@ -1,0 +1,17 @@
+{
+  "productName": "Malformed",
+  "epics": [
+    {
+      "id": "I3",
+      "n": 3,
+      "type": "Improvement",
+      "track": "Plan",
+      "title": "Good block among the bad",
+      "status": "Planned",
+      "goal": "This one is readable and should survive.",
+      "childPrd": null,
+      "childPlan": null,
+      "phaseChain": null
+    }
+  ]
+}

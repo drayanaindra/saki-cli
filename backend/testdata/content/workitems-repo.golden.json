@@ -1,0 +1,84 @@
+{
+  "prds": [
+    {
+      "name": "prd-alpha.md",
+      "path": "tasks/prd-alpha.md",
+      "status": "in-progress",
+      "done": 1,
+      "total": 2,
+      "completedSliceNums": [
+        1
+      ],
+      "blockedSliceNums": [],
+      "deferredSliceNums": []
+    },
+    {
+      "name": "prd-beta.md",
+      "path": "tasks/prd-beta.md",
+      "status": "in-progress",
+      "done": 1,
+      "total": 2,
+      "completedSliceNums": [
+        1
+      ],
+      "blockedSliceNums": [],
+      "deferredSliceNums": [],
+      "resumeTarget": {
+        "slice": 1,
+        "step": "approved"
+      },
+      "activeStep": {
+        "slice": 2,
+        "step": "rplan"
+      }
+    }
+  ],
+  "plans": [
+    {
+      "name": "alpha-plan.md",
+      "path": "tasks/alpha-plan.md",
+      "status": "in-progress",
+      "done": 1,
+      "total": 2,
+      "completedSliceNums": [
+        1
+      ],
+      "blockedSliceNums": [],
+      "deferredSliceNums": []
+    },
+    {
+      "name": "beta-slice1-plan.md",
+      "path": "tasks/beta-slice1-plan.md",
+      "status": "not-started",
+      "done": 0,
+      "total": 0,
+      "completedSliceNums": [],
+      "blockedSliceNums": [],
+      "deferredSliceNums": []
+    },
+    {
+      "name": "teacher-pages",
+      "path": "teacher-pages/plan.md",
+      "status": "done",
+      "done": 3,
+      "total": 3,
+      "completedSliceNums": [
+        1,
+        2,
+        3
+      ],
+      "blockedSliceNums": [],
+      "deferredSliceNums": []
+    },
+    {
+      "name": "Zeta-plan.md",
+      "path": "tasks/Zeta-plan.md",
+      "status": "not-started",
+      "done": 0,
+      "total": 2,
+      "completedSliceNums": [],
+      "blockedSliceNums": [],
+      "deferredSliceNums": []
+    }
+  ]
+}

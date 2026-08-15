@@ -1,0 +1,77 @@
+{
+  "productName": "Parity Fixtures",
+  "epics": [
+    {
+      "id": "E1",
+      "n": 1,
+      "type": "Epic",
+      "track": "PRD",
+      "title": "Big epic",
+      "status": "Planned",
+      "goal": "Ship the epic",
+      "childPrd": "prd-big-epic.md",
+      "childPlan": null,
+      "phaseChain": null
+    },
+    {
+      "id": "F2",
+      "n": 2,
+      "type": "Feature",
+      "track": "PRD",
+      "title": "A feature in flight",
+      "status": "In-progress",
+      "goal": "Feature goal here",
+      "childPrd": "prd-feature.md",
+      "childPlan": null,
+      "phaseChain": "F2 (MVP) → F3 [trigger: MVP shipped]"
+    },
+    {
+      "id": "F3",
+      "n": 3,
+      "type": "Feature",
+      "track": "PRD",
+      "title": "Feature with dash child",
+      "status": "Planned",
+      "goal": "No PRD yet",
+      "childPrd": null,
+      "childPlan": null,
+      "phaseChain": null
+    },
+    {
+      "id": "I1",
+      "n": 1,
+      "type": "Improvement",
+      "track": "Plan",
+      "title": "An improvement",
+      "status": "Shipped",
+      "goal": "Improve the thing",
+      "childPrd": null,
+      "childPlan": "improve-the-thing-plan.md",
+      "phaseChain": null
+    },
+    {
+      "id": "B4",
+      "n": 4,
+      "type": "Bug",
+      "track": "Plan",
+      "title": "A nasty bug",
+      "status": "Blocked",
+      "goal": "Fix the crash",
+      "childPrd": null,
+      "childPlan": null,
+      "phaseChain": null
+    },
+    {
+      "id": "F9",
+      "n": 9,
+      "type": "Feature",
+      "track": "PRD",
+      "title": "Feature missing child field",
+      "status": "Shipped",
+      "goal": "Already shipped, no child line at all",
+      "childPrd": null,
+      "childPlan": null,
+      "phaseChain": null
+    }
+  ]
+}

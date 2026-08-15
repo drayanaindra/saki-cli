@@ -1,0 +1,12 @@
+{
+  "prd": "tasks/prd-beta.md",
+  "branch": "feature/beta",
+  "commitPolicy": "per-step",
+  "slices": [
+    { "n": 1, "title": "first", "status": "done",
+      "steps": { "rplan": { "status": "done", "artifact": "tasks/beta-slice1-plan.md" },
+                 "approved": { "status": "done", "commit": "abc1234" },
+                 "qa": { "status": "done" }, "reviewer": { "status": "done" } } },
+    { "n": 2, "title": "second", "status": "not-started", "steps": {} }
+  ]
+}

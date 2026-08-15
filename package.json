@@ -1,0 +1,54 @@
+{
+  "name": "saki",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Headless command line for the saki build orchestrator — drive a PRD → plan → build → QA → review journey from a terminal, on claude, codex or opencode.",
+  "license": "MIT",
+  "author": "drayanaindra",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drayanaindra/saki-cli.git"
+  },
+  "homepage": "https://github.com/drayanaindra/saki-cli#readme",
+  "bugs": {
+    "url": "https://github.com/drayanaindra/saki-cli/issues"
+  },
+  "keywords": [
+    "cli",
+    "agent",
+    "claude",
+    "codex",
+    "opencode",
+    "orchestrator",
+    "headless"
+  ],
+  "bin": {
+    "saki": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "backend:build": "cd backend && go build -trimpath -ldflags \"-s -w\" -o ../dist/saki-backend ./cmd/server",
+    "backend:test": "cd backend && go test ./..."
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vitest": "^4.1.10"
+  }
+}

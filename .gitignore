@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Go build + coverage artifacts
+backend/coverage.out
+backend/*.tmp
+saki-backend
+
+# Playwright
+test-results/
+playwright-report/
+.last-run.json
