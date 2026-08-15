@@ -12,7 +12,7 @@ describe('backendFor — the CLI must split traffic exactly as the UI proxy does
   })
 
   it('routes the read surface to Go', () => {
-    for (const p of ['/api/roadmap', '/api/prd', '/api/workitems', '/api/screenshots', '/api/screenshot']) {
+    for (const p of ['/api/doctor', '/api/roadmap', '/api/prd', '/api/workitems', '/api/screenshots', '/api/screenshot']) {
       expect(backendFor(p, true)).toBe('go')
     }
   })
