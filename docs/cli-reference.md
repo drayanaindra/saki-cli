@@ -118,6 +118,7 @@ Add `--json` to any command for one compact machine-readable line.
 
 ```bash
 saki status                                  # is the studio up, and will it let me in
+saki doctor [--profile <dir>]                # can codex/opencode run a saki-builder command, before you dispatch
 saki roadmap list                            # work items in this repo
 saki roadmap add "<intent>" --feature        # also --epic --improvement --bug (one is required)
 
@@ -145,6 +146,15 @@ saki mr create                               # push branch + open a merge reques
 saki artifacts <runId>                       # see limitation below
 saki screenshots                             # /qa screenshots + their urls
 ```
+
+### `saki doctor` — check before you dispatch
+
+Probes each reported engine's binary (on PATH) and profile (resolves the saki-builder commands) —
+without spawning anything. `--profile <dir>` pins which profile is checked; omitted, it's the default
+one. Exit `0` means every reported engine is ready; exit `1` means at least one is not (`--json` shows
+which, plus a `fix` command when one has been authored). This slice reports only `codex` and
+`opencode` — claude coverage is a separate, later item. A studio-unreachable or gated-studio failure
+surfaces as the **existing** `3`/`6` codes (see the exit-code table above), not a doctor-specific one.
 
 ### Engines — `--engine claude|opencode|codex`
 
