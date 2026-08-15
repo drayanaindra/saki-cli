@@ -101,6 +101,7 @@ func main() {
 	sliceMetaSvc := usecase.NewSliceMetaService(infra.GitCLI{})             // F4 slice 4: slice-meta read
 	resolveSvc := usecase.NewResolveBlockerService(contentFS, contentFS)    // F4 slice 5: resolve-blocker write
 	planTrackSvc := usecase.NewPlanTrackService(contentFS, contentFS)       // F4 slice 6: plan-track roadmap writes
+	doctorSvc := usecase.NewDoctorService(infra.EngineProofChecker{})       // F2 slice 1: engine provisioning verdict
 
 	// F6 slice 1: the NEW periodic sweep — fires due auto-resumes (the restart-safe backstop for the
 	// in-memory timers). Go has no recurring all-runs poll otherwise; slice 3 adds the stall watchdog here.
@@ -112,7 +113,7 @@ func main() {
 		}
 	}()
 
-	h := adapter.NewHandler(branchSvc, runSvc, engineSvc, listSvc, streamSvc, stopSvc, proxy, gitWriteSvc, roadmapSvc, workitemsSvc, prdSvc, lockSvc, blockersSvc, sliceMetaSvc, resolveSvc, planTrackSvc)
+	h := adapter.NewHandler(branchSvc, runSvc, engineSvc, listSvc, streamSvc, stopSvc, proxy, gitWriteSvc, roadmapSvc, workitemsSvc, prdSvc, lockSvc, blockersSvc, sliceMetaSvc, resolveSvc, planTrackSvc, doctorSvc)
 	mux := h.Routes()
 	// F5 · P4 slice 1: proto asset serve (GET /api/proto/{dir}/{rest...}) — mounted as a sub-handler onto
 	// the same mux (avoids a 16th NewHandler arg), OriginGuard-wrapped, reusing the read-only content FS.

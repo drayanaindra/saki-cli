@@ -22,7 +22,7 @@ func buildContentReadHandler(fs fakeContentFS, git usecase.GitSliceReader) Handl
 	sk := usecase.NewStopService(st, &fakeKiller{})
 	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px,
 		gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(),
-		blockersSvc(fs), sliceMetaSvcFor(git), emptyResolve(), emptyPlanTrack())
+		blockersSvc(fs), sliceMetaSvcFor(git), emptyResolve(), emptyPlanTrack(), emptyDoctor())
 }
 
 func TestSliceMetaRoute(t *testing.T) {

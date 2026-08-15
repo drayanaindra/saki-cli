@@ -286,6 +286,10 @@ func blockersSvc(fs usecase.WorkItemsFS) usecase.BlockersService {
 }
 func emptyBlockers() usecase.BlockersService { return blockersSvc(fakeContentFS{}) }
 
+// emptyDoctor is the zero-value DoctorService — legal to construct from another package (no
+// unexported field is set), and correct for every test file below that doesn't exercise /api/doctor.
+func emptyDoctor() usecase.DoctorService { return usecase.DoctorService{} }
+
 func sliceMetaSvcFor(g usecase.GitSliceReader) usecase.SliceMetaService {
 	return usecase.NewSliceMetaService(g)
 }
@@ -315,7 +319,7 @@ func buildHandler(branch *string, sp *fakeSpawner, j *fakeJournal, st *fakeStore
 	ls := usecase.NewListService(st, px, fakeFullOutput{})
 	ss := usecase.NewStreamService(st, &fakeOutput{}, fakeClock{}, time.Millisecond)
 	sk := usecase.NewStopService(st, &fakeKiller{})
-	return NewHandler(bs, rs, eng, ls, ss, sk, px, gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack())
+	return NewHandler(bs, rs, eng, ls, ss, sk, px, gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack(), emptyDoctor())
 }
 
 // buildStreamHandler wires a specific run output for the /events tail tests.
@@ -324,7 +328,7 @@ func buildStreamHandler(st *fakeStore, out usecase.RunOutput, px Proxy) Handler 
 	eng := newEngine(&fakeSpawner{}, &fakeJournal{writable: true}, st, &fakeKiller{})
 	ss := usecase.NewStreamService(st, out, fakeClock{}, time.Millisecond)
 	sk := usecase.NewStopService(st, &fakeKiller{})
-	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px, gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack())
+	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px, gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack(), emptyDoctor())
 }
 
 // buildStopHandler exposes the killer for the /api/run/:id/stop tests.
@@ -333,7 +337,7 @@ func buildStopHandler(st *fakeStore, k *fakeKiller, px Proxy) Handler {
 	eng := newEngine(&fakeSpawner{}, &fakeJournal{writable: true}, st, k)
 	ss := usecase.NewStreamService(st, &fakeOutput{}, fakeClock{}, time.Millisecond)
 	sk := usecase.NewStopService(st, k)
-	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px, gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack())
+	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px, gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack(), emptyDoctor())
 }
 
 func post(t *testing.T, srv *httptest.Server, path, body string) *http.Response {
@@ -409,7 +413,7 @@ func buildGitHandler(w fakeGitWriter) Handler {
 	eng := newEngine(&fakeSpawner{}, &fakeJournal{writable: true}, st, &fakeKiller{})
 	ss := usecase.NewStreamService(st, &fakeOutput{}, fakeClock{}, time.Millisecond)
 	sk := usecase.NewStopService(st, &fakeKiller{})
-	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px, gitWriteSvc(w), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack())
+	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px, gitWriteSvc(w), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack(), emptyDoctor())
 }
 
 func TestBranchesHandler(t *testing.T) {
