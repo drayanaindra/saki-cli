@@ -336,7 +336,7 @@ func TestCodexSkillsProof_AcceptsTheRegisteredPlugin(t *testing.T) {
 
 [marketplaces.saketek]
 source_type = "git"
-source = "https://gitlab.com/drayanaindra/saki-builder.git"
+source = "https://github.com/drayanaindra/saki-builder.git"
 
 [plugins."saki-builder@saketek"]
 enabled = true

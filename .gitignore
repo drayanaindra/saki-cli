@@ -16,3 +16,6 @@ saki-backend
 test-results/
 playwright-report/
 .last-run.json
+
+# Agent env — personal, machine-local. The rest of .claude/ IS committed (shared team config).
+.claude/settings.local.json

@@ -19,7 +19,7 @@ MIT repo:
 | Repo | What it is |
 |---|---|
 | **saki-cli** (this one) | the runtime: spawns the engine, tracks runs, serves the journey API, and the `saki` CLI |
-| [**saki-builder**](https://gitlab.com/drayanaindra/saki-builder) | the workflow: the skills, agents and hooks the engine executes |
+| [**saki-builder**](https://github.com/drayanaindra/saki-builder) | the workflow: the skills, agents and hooks the engine executes |
 
 **You need both.** Without the skills installed, a run still exits 0 while the model simply answers
 that it cannot find the command — so the backend refuses such a spawn up front rather than parking a

@@ -71,7 +71,7 @@ if [ "$SYMLINK" != "1" ]; then
 
   Install the plugin (recommended — it carries skills, agents and hooks, and stays in step):
 
-      codex plugin marketplace add https://gitlab.com/drayanaindra/saki-builder.git
+      codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
       codex plugin add saki-builder@saketek
 
   Or, for an ephemeral/pinned profile where a marketplace plugin is impractical:

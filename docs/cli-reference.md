@@ -159,7 +159,7 @@ Every run-start command takes `--engine`, choosing which agent runtime executes 
 
 ```bash
 # one-time provisioning
-codex plugin marketplace add https://gitlab.com/drayanaindra/saki-builder.git
+codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
 codex plugin add saki-builder@saketek
 bash scripts/install-codex-skills.sh   # verifies it; prints the fix if unprovisioned
 

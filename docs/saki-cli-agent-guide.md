@@ -121,7 +121,7 @@ each has to be provisioned to do so:
 | `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | `codex plugin add saki-builder@saketek` |
 
 ```bash
-codex plugin marketplace add https://gitlab.com/drayanaindra/saki-builder.git
+codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
 codex plugin add saki-builder@saketek
 bash scripts/install-codex-skills.sh    # verifies the above; prints the fix if unprovisioned
 ```
