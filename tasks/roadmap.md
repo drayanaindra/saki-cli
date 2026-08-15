@@ -15,14 +15,26 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 **Child PRD:** —
 
 ### F2 · `saki doctor` — verify engine provisioning before a run
-**Type:** Feature · **Track:** PRD · **Status:** Planned · **Owner:** unassigned · **Updated:** 2026-08-15
+**Type:** Feature · **Track:** PRD · **Status:** Shipped · **Owner:** unassigned · **Updated:** 2026-08-16
 **Goal:** One command that reports whether each engine (`claude`/`codex`/`opencode`) is on PATH and has `saki-builder` resolvable, so a missing profile is caught before a spawn is refused mid-run.
-**Child PRD:** —
+**Child PRD:** prd-saki-doctor-verify-engine-provisioning-before-a-run.md
 
 ### F3 · MCP surface (`saki mcp`)
 **Type:** Feature · **Track:** PRD · **Status:** Planned · **Owner:** unassigned · **Updated:** 2026-08-15
 **Goal:** Expose the journey commands as MCP tools for agents that prefer a tool call to a shell, without forking the exit-code contract that shell callers depend on.
 **Child PRD:** —
+
+### F4 · `saki doctor` — claude coverage
+**Type:** Feature · **Track:** PRD · **Status:** Planned · **Owner:** unassigned · **Updated:** 2026-08-15
+**Goal:** Give claude a pre-dispatch provisioning verdict so doctor covers 3/3 engines instead of 2/3. Deferred from F2: not a mirror of the existing proofs — it needs `installed_plugins.json` **and** `settings.json` → `enabledPlugins` (the registry carries no enablement), plus a pinned resolution order for the two plugin-id spellings, which carry different versions.
+**Child PRD:** —
+**Phase chain:** F2 (MVP) → F4 [trigger: F2 shipped and a claude-profile provisioning failure is reported]
+
+### F5 · `saki doctor` — remediation text for opencode and claude
+**Type:** Feature · **Track:** PRD · **Status:** Planned · **Owner:** unassigned · **Updated:** 2026-08-15
+**Goal:** Every `failed` verdict carries a runnable fix, not just codex's. Deferred from F2: only codex has remediation text today (`backend/infra/codex.go:72-74`); opencode's error carries none (`backend/infra/opencode.go:58`) and claude has no proof yet, so authoring both is its own item.
+**Child PRD:** —
+**Phase chain:** F2 (MVP) → F5 [trigger: F2 shipped and an opencode `failed` verdict is seen without a fix]
 
 ### I1 · Publish `saki` to npm
 **Type:** Improvement · **Track:** Plan · **Status:** Planned · **Owner:** unassigned · **Updated:** 2026-08-15
