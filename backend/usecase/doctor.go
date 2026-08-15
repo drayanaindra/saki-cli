@@ -32,13 +32,13 @@ func (s DoctorService) Check(configDir *string) []domain.EngineReport {
 }
 
 func (s DoctorService) checkOne(engine domain.RunEngine, profile string, configDir *string) domain.EngineReport {
-	report := domain.EngineReport{Engine: string(engine), Profile: profile, Status: "ok"}
+	report := domain.EngineReport{Engine: string(engine), Profile: profile, Status: domain.StatusOK}
 	if err := s.proofs.BinaryCheck(engine); err != nil {
-		report.Status, report.Reason = "failed", err.Error()
+		report.Status, report.Reason = domain.StatusFailed, err.Error()
 		return report
 	}
 	if err := s.proofs.ProfileProof(engine, configDir); err != nil {
-		report.Status, report.Reason = "failed", err.Error()
+		report.Status, report.Reason = domain.StatusFailed, err.Error()
 	}
 	return report
 }

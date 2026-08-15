@@ -286,9 +286,11 @@ func blockersSvc(fs usecase.WorkItemsFS) usecase.BlockersService {
 }
 func emptyBlockers() usecase.BlockersService { return blockersSvc(fakeContentFS{}) }
 
-// emptyDoctor is the zero-value DoctorService — legal to construct from another package (no
-// unexported field is set), and correct for every test file below that doesn't exercise /api/doctor.
-func emptyDoctor() usecase.DoctorService { return usecase.DoctorService{} }
+// emptyDoctor wraps a harmless fakeEngineProofs (doctor_http_test.go) that always reports ok —
+// matching every sibling emptyX() helper's convention of wrapping a real fake rather than a bare
+// zero-value. A bare usecase.DoctorService{} (nil EngineProofs) would nil-panic the moment any test
+// file below is later extended to exercise /api/doctor; this can never panic.
+func emptyDoctor() usecase.DoctorService { return usecase.NewDoctorService(&fakeEngineProofs{}) }
 
 func sliceMetaSvcFor(g usecase.GitSliceReader) usecase.SliceMetaService {
 	return usecase.NewSliceMetaService(g)

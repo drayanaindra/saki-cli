@@ -95,4 +95,29 @@ describe('cmdDoctor', () => {
     const code = await cmdDoctor(ctx, [], {})
     expect(code).toBe(EXIT.ERROR)
   })
+
+  it('renders a fix line to stderr for a failed engine that has one', async () => {
+    const { ctx, errOut } = routedCtx({
+      '/api/doctor': {
+        body: {
+          engines: [
+            engine({ engine: 'codex', status: 'failed', reason: 'not provisioned', fix: 'codex plugin add saki-builder@saketek' }),
+            engine({ engine: 'opencode' }),
+          ],
+        },
+      },
+    })
+    await cmdDoctor(ctx, [], {})
+    expect(errOut).toContain('fix (codex): codex plugin add saki-builder@saketek')
+  })
+
+  it('renders no fix line when a failed engine has none yet', async () => {
+    const { ctx, errOut } = routedCtx({
+      '/api/doctor': {
+        body: { engines: [engine({ engine: 'codex', status: 'failed', reason: 'not provisioned' }), engine({ engine: 'opencode' })] },
+      },
+    })
+    await cmdDoctor(ctx, [], {})
+    expect(errOut.some((l) => l.startsWith('fix ('))).toBe(false)
+  })
 })
