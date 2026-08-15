@@ -99,3 +99,19 @@ func TestDoctorHandler_RealWiring(t *testing.T) {
 		t.Fatalf("engines = %+v, want 2 entries with codex failed (binary missing)", body.Engines)
 	}
 }
+
+// F2 slice 2, criterion 2.4 — /api/doctor was mounted OriginGuard-wrapped in slice 1
+// (backend/adapter/http.go:97), but slice 1 wrote no dedicated regression test for THIS route. Same
+// pattern as the existing git-write regression (backend/adapter/http_test.go:556-569).
+func TestDoctorHandler_RejectsNonLoopbackHost(t *testing.T) {
+	mux := doctorHandlerFor(&fakeEngineProofs{}).Routes()
+	req := httptest.NewRequest(http.MethodGet, "/api/doctor", nil)
+	req.Host = "evil.com"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("doctor route want 403 on non-loopback host, got %d", rec.Code)
+	}
+}
