@@ -146,14 +146,18 @@ func (s *ShSpawner) Spawn(spec usecase.SpawnSpec) (int, func() int, error) {
 // (→ the build path parks immediately) instead of no-opping on a clean exit and parking a build that
 // never started. claude (the default) has no preflight — its binary's absence already surfaces via the
 // durable exit code as today, and it resolves commands from the message with nothing to prove.
+//
+// F2 slice 1: the binary-on-PATH and profile-proof halves are EngineBinaryCheck/EngineProfileProof
+// (below) — the SAME functions `saki doctor`'s pre-dispatch verdict calls (via infra.EngineProofChecker),
+// so a doctor verdict and a spawn refusal can never disagree (rule 4). The opencode-only prompt-shape
+// refusal stays HERE, inline, between the two — it is not a provisioning check, and doctor has no
+// prompt to check, so it is deliberately excluded from both shared functions.
 func preflight(spec usecase.SpawnSpec) error {
-	switch domain.ResolveEngine(spec.Engine) {
-	case domain.EngineOpencode:
-		// E26 9.1.5 — an opencode run needs the opencode CLI on the spawner's PATH. Checked BEFORE
-		// spawning so a missing binary is ErrBinaryNotFound, not a silent exit-127 no-op.
-		if _, err := exec.LookPath("opencode"); err != nil {
-			return fmt.Errorf("%w (opencode)", usecase.ErrBinaryNotFound)
-		}
+	engine := domain.ResolveEngine(spec.Engine)
+	if err := EngineBinaryCheck(engine); err != nil {
+		return err
+	}
+	if engine == domain.EngineOpencode {
 		// A prompt the operator MEANT as a command but which does not parse (`/build, then do X`, a
 		// >64-char name, a leading `-`) must refuse loudly rather than fall through to the plain message
 		// form — on opencode that form is the KNOWN-DEAD path this whole change exists to close (raw
@@ -165,17 +169,43 @@ func preflight(spec usecase.SpawnSpec) error {
 		if _, _, ok := domain.SplitSlashCommand(spec.Prompt); !ok && domain.LooksLikeSlashCommand(spec.Prompt) {
 			return fmt.Errorf("%w: opencode cannot resolve this prompt as a command", ErrUnresolvableCommand)
 		}
-		// E26 9.4.1/9.4.2 — prove the profile carries the saki-builder plugin by reading its config
-		// (NEVER a run exit code — rule 4). A plugin-less profile refuses loudly, no silent no-op.
-		return OpencodePluginProof(spec.ConfigDir)
+	}
+	return EngineProfileProof(engine, spec.ConfigDir)
+}
+
+// EngineBinaryCheck verifies the engine's CLI is on the spawner's PATH (E26 9.1.5). Checked BEFORE
+// spawning so a missing binary is ErrBinaryNotFound, not a silent exit-127 no-op. claude has no binary
+// check — its absence already surfaces via the durable exit code, and it resolves commands from the
+// message with nothing to prove. Shared by preflight and `saki doctor` (rule 4) — the SAME function,
+// not a parallel copy that could drift.
+func EngineBinaryCheck(engine domain.RunEngine) error {
+	switch engine {
+	case domain.EngineOpencode:
+		if _, err := exec.LookPath("opencode"); err != nil {
+			return fmt.Errorf("%w (opencode)", usecase.ErrBinaryNotFound)
+		}
 	case domain.EngineCodex:
 		if _, err := exec.LookPath("codex"); err != nil {
 			return fmt.Errorf("%w (codex)", usecase.ErrBinaryNotFound)
 		}
-		// Same rule-4 reasoning as the opencode plugin proof: a codex home without the saki-builder
-		// skills still exits 0 — the model just answers that it cannot find the command — so install
-		// state is proven by READING the home, never inferred from the run.
-		return CodexSkillsProof(spec.ConfigDir)
+	}
+	return nil
+}
+
+// EngineProfileProof proves the engine's profile resolves the saki-builder commands (NEVER a run exit
+// code — rule 4). claude has no proof yet (F4 — deferred; §11 non-goal for F2). Shared by preflight and
+// `saki doctor` — the SAME function, not a parallel copy that could drift.
+func EngineProfileProof(engine domain.RunEngine, configDir *string) error {
+	switch engine {
+	case domain.EngineOpencode:
+		// E26 9.4.1/9.4.2 — prove the profile carries the saki-builder plugin by reading its config.
+		// A plugin-less profile refuses loudly, no silent no-op.
+		return OpencodePluginProof(configDir)
+	case domain.EngineCodex:
+		// Same rule-4 reasoning: a codex home without the saki-builder skills still exits 0 — the model
+		// just answers that it cannot find the command — so install state is proven by READING the
+		// home, never inferred from the run.
+		return CodexSkillsProof(configDir)
 	default:
 		return nil
 	}
