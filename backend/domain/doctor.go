@@ -20,7 +20,7 @@ type EngineReport struct {
 	Profile string       `json:"profile"`
 	Status  EngineStatus `json:"status"`
 	Reason  string       `json:"reason"`
-	// Fix is a runnable remediation command, or "" when none has been authored yet (F5, and the
-	// completed codex remediation in F2 slice 2 — this slice never populates it).
+	// Fix is a runnable remediation command, or "" when none has been authored yet (F5 for opencode;
+	// codex's complete two-line remediation is populated as of F2 slice 2, usecase.CodexInstallFix).
 	Fix string `json:"fix"`
 }

@@ -29,7 +29,7 @@ build that never started.
 
 - **Node ≥ 20** (the CLI) and **Go ≥ 1.25** (to build the backend from source)
 - **An engine on PATH**: `claude`, `codex`, or `opencode`
-- **`saki-builder` installed into that engine's profile** — e.g. `codex plugin add saki-builder@saketek`
+- **`saki-builder` installed into that engine's profile** — e.g. `codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git && codex plugin add saki-builder@saketek`
 - **`git`**, plus **`glab`** if you want `saki mr create`
 
 ## Quickstart

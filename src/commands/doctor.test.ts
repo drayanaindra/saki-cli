@@ -102,19 +102,25 @@ describe('cmdDoctor', () => {
     expect(code).toBe(EXIT.ERROR)
   })
 
+  // fix is a two-line value for a real codex ProfileProof failure (usecase.CodexInstallFix, F2
+  // slice 2) — this fixture uses that real shape, not a stale single-line stand-in, so the test
+  // actually exercises what the backend now sends.
+  const codexFix =
+    'codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git\ncodex plugin add saki-builder@saketek'
+
   it('renders a fix line to stderr for a failed engine that has one', async () => {
     const { ctx, errOut } = routedCtx({
       '/api/doctor': {
         body: {
           engines: [
-            engine({ engine: 'codex', status: 'failed', reason: 'not provisioned', fix: 'codex plugin add saki-builder@saketek' }),
+            engine({ engine: 'codex', status: 'failed', reason: 'not provisioned', fix: codexFix }),
             engine({ engine: 'opencode' }),
           ],
         },
       },
     })
     await cmdDoctor(ctx, [], {})
-    expect(errOut).toContain('fix (codex): codex plugin add saki-builder@saketek')
+    expect(errOut).toContain(`fix (codex): ${codexFix}`)
   })
 
   it('renders no fix line when a failed engine has none yet', async () => {

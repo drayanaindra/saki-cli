@@ -19,43 +19,54 @@ import (
 // equivalent of; a slash prompt here would contaminate the comparison with an unrelated refusal.
 func TestDoctorPreflightAgreement(t *testing.T) {
 	cases := []struct {
-		name    string
-		engine  domain.RunEngine
-		fixture func(t *testing.T, dir string)
+		name   string
+		engine domain.RunEngine
+		wantOK bool
+		// binaryAbsent skips putBinariesOnPath — the engine's binary is genuinely absent, so this
+		// exercises the EngineBinaryCheck half of the shared functions rather than only ProfileProof.
+		binaryAbsent bool
+		fixture      func(t *testing.T, dir string)
 	}{
 		{
-			name:   "codex provisioned",
-			engine: domain.EngineCodex,
+			name: "codex provisioned", engine: domain.EngineCodex, wantOK: true,
 			fixture: func(t *testing.T, dir string) {
 				writeCodexProfile(t, dir, "[plugins.\"saki-builder@saketek\"]\nenabled = true\n")
 			},
 		},
 		{
-			name:   "codex unprovisioned",
-			engine: domain.EngineCodex,
+			name: "codex unprovisioned", engine: domain.EngineCodex, wantOK: false,
 			fixture: func(t *testing.T, dir string) {
 				writeCodexProfile(t, dir, "")
 			},
 		},
 		{
-			name:   "opencode provisioned",
-			engine: domain.EngineOpencode,
+			name: "opencode provisioned", engine: domain.EngineOpencode, wantOK: true,
 			fixture: func(t *testing.T, dir string) {
 				writeOpencodeProfile(t, dir, `{"plugin":["@saketek/saki-builder"]}`)
 			},
 		},
 		{
-			name:   "opencode unprovisioned",
-			engine: domain.EngineOpencode,
+			name: "opencode unprovisioned", engine: domain.EngineOpencode, wantOK: false,
 			fixture: func(t *testing.T, dir string) {
 				writeOpencodeProfile(t, dir, `{"plugin":[]}`)
 			},
+		},
+		{
+			// Criterion 2.1's own case, given agreement coverage too: preflight and doctor call the
+			// SAME EngineBinaryCheck (rule 4) — this proves the sharing holds through preflight's own
+			// SpawnSpec entry point, not only through the ProfileProof half the four cases above cover.
+			name: "codex binary absent", engine: domain.EngineCodex, wantOK: false, binaryAbsent: true,
+			fixture: func(t *testing.T, dir string) {}, // profile is irrelevant — BinaryCheck short-circuits first
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			putBinariesOnPath(t)
+			if tc.binaryAbsent {
+				t.Setenv("PATH", t.TempDir()) // no engine binaries at all
+			} else {
+				putBinariesOnPath(t)
+			}
 			dir := t.TempDir()
 			tc.fixture(t, dir)
 
@@ -65,10 +76,14 @@ func TestDoctorPreflightAgreement(t *testing.T) {
 
 			reports := usecase.NewDoctorService(EngineProofChecker{}).Check(&dir)
 			var report domain.EngineReport
+			found := false
 			for _, r := range reports {
 				if r.Engine == string(tc.engine) {
-					report = r
+					report, found = r, true
 				}
+			}
+			if !found {
+				t.Fatalf("%s: doctor reported no entry for engine %q — reports=%+v", tc.name, tc.engine, reports)
 			}
 
 			preflightOK := preflightErr == nil
@@ -76,6 +91,9 @@ func TestDoctorPreflightAgreement(t *testing.T) {
 			if preflightOK != doctorOK {
 				t.Fatalf("%s: preflight ok=%v (err=%v) vs doctor ok=%v (report=%+v) — DISAGREE",
 					tc.name, preflightOK, preflightErr, doctorOK, report)
+			}
+			if preflightOK != tc.wantOK {
+				t.Fatalf("%s: preflight ok=%v, want %v (err=%v)", tc.name, preflightOK, tc.wantOK, preflightErr)
 			}
 		})
 	}

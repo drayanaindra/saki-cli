@@ -150,8 +150,14 @@ func TestCodexInstallFix_MatchesInstallerScript(t *testing.T) {
 	const marketplaceLine = "codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git"
 	const addLine = "codex plugin add saki-builder@saketek"
 
+	// Resolves outside this Go module (backend/go.mod) into the repo root — true for every checkout
+	// this repo is actually tested from, but a vendored/extracted usecase package would lack it.
+	// Skip rather than fail in that case; this drift-guard only makes sense inside the full repo.
 	scriptPath := filepath.Join("..", "..", "scripts", "install-codex-skills.sh")
 	raw, err := os.ReadFile(scriptPath)
+	if os.IsNotExist(err) {
+		t.Skipf("%s not found — skipping outside a full repo checkout", scriptPath)
+	}
 	if err != nil {
 		t.Fatalf("reading %s: %v", scriptPath, err)
 	}
