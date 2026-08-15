@@ -68,10 +68,13 @@ func CodexSkillsProof(configDir *string) error {
 	}
 	// Wrapped in BOTH sentinels: ErrCodexSkillsMissing for callers that care which engine failed,
 	// usecase.ErrEngineNotProvisioned so the HTTP layer surfaces this diagnosis (fix included)
-	// instead of a generic "spawn failed".
-	return fmt.Errorf("%w: %w: %s registers no enabled saki-builder plugin and %s is absent — run "+
-		"`codex plugin add saki-builder@saketek` (or bash scripts/install-codex-skills.sh to check)",
-		usecase.ErrEngineNotProvisioned, ErrCodexSkillsMissing, filepath.Join(home, "config.toml"), skill)
+	// instead of a generic "spawn failed". The remediation is usecase.CodexInstallFix — the SAME
+	// constant doctor's EngineReport.Fix reads (F2 slice 2) — so this message and that field can
+	// never drift apart.
+	return fmt.Errorf("%w: %w: %s registers no enabled saki-builder plugin and %s is absent — run:\n%s\n"+
+		"(or bash scripts/install-codex-skills.sh to check)",
+		usecase.ErrEngineNotProvisioned, ErrCodexSkillsMissing, filepath.Join(home, "config.toml"), skill,
+		usecase.CodexInstallFix)
 }
 
 // pluginRegistered reports whether config.toml carries an ENABLED saki-builder plugin table. A table
