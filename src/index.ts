@@ -31,6 +31,7 @@ import {
   cmdWorkitems,
 } from './commands/repo.js'
 import { cmdArtifacts } from './commands/artifacts.js'
+import { cmdDoctor } from './commands/doctor.js'
 
 // Flags every command accepts.
 const COMMON: FlagSpec = { json: 'boolean', cwd: 'string' }
@@ -132,6 +133,13 @@ const COMMANDS: CommandDef[] = [
     summary: 'are both studio servers up, and will they let me in',
     flags: COMMON,
     run: (ctx) => cmdStatus(ctx),
+  },
+  {
+    path: ['doctor'],
+    usage: 'saki doctor [--profile <dir>]',
+    summary: 'can codex/opencode actually run a saki-builder command, before you dispatch a run',
+    flags: { ...COMMON, profile: 'string' },
+    run: (ctx, positionals, flags) => cmdDoctor(ctx, positionals, flags),
   },
   {
     path: ['roadmap', 'list'],

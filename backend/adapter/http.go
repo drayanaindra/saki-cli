@@ -49,11 +49,12 @@ type Handler struct {
 	sliceMeta usecase.SliceMetaService
 	resolve   usecase.ResolveBlockerService
 	planTrack usecase.PlanTrackService
+	doctor    usecase.DoctorService // F2 slice 1: engine provisioning verdict
 }
 
 // NewHandler wires the usecase services into the HTTP handler.
-func NewHandler(branch usecase.BranchService, runs usecase.RunService, engine *usecase.BuildEngineService, list usecase.ListService, stream usecase.StreamService, stop usecase.StopService, proxy Proxy, gitWrite usecase.GitWriteService, roadmap usecase.RoadmapService, workitems usecase.WorkItemsService, prd usecase.PrdService, lock usecase.LockService, blockers usecase.BlockersService, sliceMeta usecase.SliceMetaService, resolve usecase.ResolveBlockerService, planTrack usecase.PlanTrackService) Handler {
-	return Handler{branch: branch, runs: runs, engine: engine, list: list, stream: stream, stop: stop, proxy: proxy, gitWrite: gitWrite, roadmap: roadmap, workitems: workitems, prd: prd, lock: lock, blockers: blockers, sliceMeta: sliceMeta, resolve: resolve, planTrack: planTrack}
+func NewHandler(branch usecase.BranchService, runs usecase.RunService, engine *usecase.BuildEngineService, list usecase.ListService, stream usecase.StreamService, stop usecase.StopService, proxy Proxy, gitWrite usecase.GitWriteService, roadmap usecase.RoadmapService, workitems usecase.WorkItemsService, prd usecase.PrdService, lock usecase.LockService, blockers usecase.BlockersService, sliceMeta usecase.SliceMetaService, resolve usecase.ResolveBlockerService, planTrack usecase.PlanTrackService, doctor usecase.DoctorService) Handler {
+	return Handler{branch: branch, runs: runs, engine: engine, list: list, stream: stream, stop: stop, proxy: proxy, gitWrite: gitWrite, roadmap: roadmap, workitems: workitems, prd: prd, lock: lock, blockers: blockers, sliceMeta: sliceMeta, resolve: resolve, planTrack: planTrack, doctor: doctor}
 }
 
 // Routes returns the mux of Go-owned routes. Patterns are method-anchored (Go 1.22+).
@@ -90,6 +91,10 @@ func (h Handler) Routes() *http.ServeMux {
 	mux.Handle("GET /api/review-state", OriginGuard(http.HandlerFunc(h.reviewStateHandler))) // slice 2
 	mux.Handle("GET /api/slice-meta", OriginGuard(http.HandlerFunc(h.sliceMetaHandler)))     // slice 4
 	mux.Handle("GET /api/blockers", OriginGuard(http.HandlerFunc(h.blockersHandler)))        // slice 4
+	// F2 · P2 slice 1: engine provisioning verdict. OriginGuard-wrapped alongside its content-read
+	// siblings above — it discloses local profile filesystem paths in its reason field, same class of
+	// disclosure as every route in this block.
+	mux.Handle("GET /api/doctor", OriginGuard(http.HandlerFunc(h.doctorHandler)))
 	// F4 · P3 slice 3: PRD lock WRITE. OriginGuard-wrapped (BR7) — same TS global-guard parity; R3
 	// (domain.ValidateLockRequest) contains the path, OriginGuard the origin (DNS-rebind/CSRF).
 	mux.Handle("POST /api/lock-prd", OriginGuard(http.HandlerFunc(h.lockHandler)))
@@ -223,6 +228,16 @@ func (h Handler) blockersHandler(w http.ResponseWriter, r *http.Request) {
 func (h Handler) roadmapHandler(w http.ResponseWriter, r *http.Request) {
 	status, body := h.roadmap.ReadRoadmap(r.URL.Query().Get("cwd"))
 	writeJSON(w, status, body)
+}
+
+// doctorHandler serves F2's pre-dispatch provisioning verdict. `?profile=<dir>` pins the probed
+// profile the same way the proofs' own configDir does; absent = the default profile.
+func (h Handler) doctorHandler(w http.ResponseWriter, r *http.Request) {
+	var configDir *string
+	if p := r.URL.Query().Get("profile"); p != "" {
+		configDir = &p
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"engines": h.doctor.Check(configDir)})
 }
 
 // workitemsHandler mirrors apps/server GET /api/workitems: 422 when cwd is missing, else the PRD/plan

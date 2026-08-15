@@ -29,7 +29,7 @@ build that never started.
 
 - **Node ≥ 20** (the CLI) and **Go ≥ 1.25** (to build the backend from source)
 - **An engine on PATH**: `claude`, `codex`, or `opencode`
-- **`saki-builder` installed into that engine's profile** — e.g. `codex plugin add saki-builder@saketek`
+- **`saki-builder` installed into that engine's profile** — e.g. `codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git && codex plugin add saki-builder@saketek`
 - **`git`**, plus **`glab`** if you want `saki mr create`
 
 ## Quickstart
@@ -99,7 +99,6 @@ Honest list of what the packaging still lacks:
 
 - No published npm package — build from source for now
 - No daemon lifecycle (`saki` does not yet auto-start the backend) and no unix-socket transport
-- No `saki doctor` to verify engine provisioning before a run
 - No MCP surface (`saki mcp`) for agents that prefer tools over a shell
 - `saki artifacts` needs a companion orchestrator that is not part of this repo
 

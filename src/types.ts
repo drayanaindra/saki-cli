@@ -97,3 +97,18 @@ export interface WorkItemsResult {
   prds: Array<Record<string, unknown>>
   plans: Array<Record<string, unknown>>
 }
+
+// backend/domain/doctor.go's EngineReport, mirrored field-for-field. status is a closed union so a
+// misspelled comparison is a compile error, not a silent false — same discipline as RunStatus above.
+// All five fields are always present (never omitted): reason/fix are "" when there is nothing to report.
+export interface EngineReport {
+  engine: string
+  profile: string
+  status: 'ok' | 'failed' | 'unknown'
+  reason: string
+  fix: string
+}
+
+export interface DoctorResult {
+  engines: EngineReport[]
+}

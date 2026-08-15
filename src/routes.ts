@@ -30,6 +30,7 @@ const GO_ROUTES: RegExp[] = [
   /^\/api\/switch-branch($|\?)/,
   /^\/api\/create-mr($|\?)/,
   /^\/api\/merge-to-main($|\?)/,
+  /^\/api\/doctor($|\?)/,
   /^\/api\/roadmap($|\?)/,
   /^\/api\/workitems($|\?)/,
   /^\/api\/prd($|\?)/,

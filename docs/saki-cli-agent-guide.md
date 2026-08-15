@@ -118,7 +118,7 @@ each has to be provisioned to do so:
 |---|---|---|---|
 | `claude` *(default)* | `claude` | from the message | already true if the studio works |
 | `opencode` | `opencode` | via `--command` (its `run` never expands a slash command in the message), skills installed **bare** | `opencode plugin @saketek/saki-builder --global` + `npx @saketek/saki-builder install --global` |
-| `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | `codex plugin add saki-builder@saketek` |
+| `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | `codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git` + `codex plugin add saki-builder@saketek` |
 
 ```bash
 codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
@@ -137,7 +137,9 @@ fallback exists only for an ephemeral pinned profile where a marketplace plugin 
 $ saki build E22 --engine codex
 error: engine profile cannot resolve the saki-builder commands: codex profile does not resolve
 @saketek/saki-builder: /Users/me/.codex/config.toml registers no enabled saki-builder plugin and
-/Users/me/.codex/skills/build/SKILL.md is absent — run `codex plugin add saki-builder@saketek`
+/Users/me/.codex/skills/build/SKILL.md is absent — run:
+codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
+codex plugin add saki-builder@saketek
 (or bash scripts/install-codex-skills.sh to check)
 ```
 

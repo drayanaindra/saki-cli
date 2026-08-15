@@ -521,3 +521,30 @@ func TestFilterEnv(t *testing.T) {
 		t.Fatalf("want 2 remaining, got %d", len(out))
 	}
 }
+
+// F2 slice 1, criterion 1.4 — a peel-off proving PRECEDENCE, not just each branch in isolation: as
+// each earlier fault is cleared, preflight must fall through to the NEXT check in order, not jump
+// straight to a nil error. This is the regression proof for extracting preflight's body into
+// EngineBinaryCheck/EngineProfileProof (spawner.go) — the extraction must not reorder or skip a check.
+func TestPreflight_OpencodePeelOff(t *testing.T) {
+	j := NewFileJournal(t.TempDir())
+
+	// (1) binary off PATH -> ErrBinaryNotFound, before anything else is even considered.
+	t.Setenv("PATH", t.TempDir())
+	sp := NewShSpawner(j)
+	if _, _, err := sp.Spawn(usecase.SpawnSpec{ID: "peel1", Prompt: "/build, then do X", Engine: domain.EngineOpencode}); !errors.Is(err, usecase.ErrBinaryNotFound) {
+		t.Fatalf("(1) binary missing: want ErrBinaryNotFound, got %v", err)
+	}
+
+	// (2) PATH restored, prompt still unparseable -> ErrUnresolvableCommand (never reaches the profile proof).
+	t.Setenv("PATH", writeFakeOpencode(t))
+	if _, _, err := sp.Spawn(usecase.SpawnSpec{ID: "peel2", Prompt: "/build, then do X", Engine: domain.EngineOpencode}); !errors.Is(err, ErrUnresolvableCommand) {
+		t.Fatalf("(2) unparseable prompt: want ErrUnresolvableCommand, got %v", err)
+	}
+
+	// (3) prompt fixed (parseable), profile has no opencode.json -> ErrEngineNotProvisioned.
+	brokenProfile := t.TempDir()
+	if _, _, err := sp.Spawn(usecase.SpawnSpec{ID: "peel3", Prompt: "/build x", ConfigDir: &brokenProfile, Engine: domain.EngineOpencode}); !errors.Is(err, usecase.ErrEngineNotProvisioned) {
+		t.Fatalf("(3) unprovisioned profile: want ErrEngineNotProvisioned, got %v", err)
+	}
+}

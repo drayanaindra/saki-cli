@@ -23,7 +23,7 @@ func buildResolveHandler(fs fakeContentFS, w usecase.ContentWriter) Handler {
 	eng := newEngine(&fakeSpawner{}, &fakeJournal{writable: true}, st, &fakeKiller{})
 	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px,
 		gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(),
-		emptyBlockers(), emptySliceMeta(), resolveSvc(fs, w), emptyPlanTrack())
+		emptyBlockers(), emptySliceMeta(), resolveSvc(fs, w), emptyPlanTrack(), emptyDoctor())
 }
 
 // AC 5.1c: a matching open-question bullet → prefixed ✅ RESOLVED, {resolved:1}, and the write lands.

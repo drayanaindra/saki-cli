@@ -399,6 +399,12 @@ func TestCodexSkillsProof(t *testing.T) {
 	if !errors.Is(err, usecase.ErrEngineNotProvisioned) {
 		t.Errorf("refusal must wrap ErrEngineNotProvisioned so the reason reaches the operator, got %v", err)
 	}
+	// F2 slice 2: the refusal must carry the COMPLETE remediation — both installer lines, not just
+	// the second — and it must be the SAME text doctor's EngineReport.Fix reads (usecase.CodexInstallFix),
+	// never a second hardcoded copy.
+	if !strings.Contains(err.Error(), usecase.CodexInstallFix) {
+		t.Errorf("refusal must embed usecase.CodexInstallFix verbatim, got %v", err)
+	}
 }
 
 // The proof and the spawn must resolve the SAME home, or a run could be proven against one profile and

@@ -118,6 +118,7 @@ Add `--json` to any command for one compact machine-readable line.
 
 ```bash
 saki status                                  # is the studio up, and will it let me in
+saki doctor [--profile <dir>]                # can codex/opencode run a saki-builder command, before you dispatch
 saki roadmap list                            # work items in this repo
 saki roadmap add "<intent>" --feature        # also --epic --improvement --bug (one is required)
 
@@ -146,6 +147,15 @@ saki artifacts <runId>                       # see limitation below
 saki screenshots                             # /qa screenshots + their urls
 ```
 
+### `saki doctor` — check before you dispatch
+
+Probes each reported engine's binary (on PATH) and profile (resolves the saki-builder commands) —
+without spawning anything. `--profile <dir>` pins which profile is checked; omitted, it's the default
+one. Exit `0` means every reported engine is ready; exit `1` means at least one is not (`--json` shows
+which, plus a `fix` command when one has been authored). This slice reports only `codex` and
+`opencode` — claude coverage is a separate, later item. A studio-unreachable or gated-studio failure
+surfaces as the **existing** `3`/`6` codes (see the exit-code table above), not a doctor-specific one.
+
 ### Engines — `--engine claude|opencode|codex`
 
 Every run-start command takes `--engine`, choosing which agent runtime executes the run. **Omit it for
@@ -155,7 +165,7 @@ Every run-start command takes `--engine`, choosing which agent runtime executes 
 |---|---|---|---|
 | `claude` *(default)* | `claude` | from the message | already true if the studio works |
 | `opencode` | `opencode` | via `--command` — its `run` never expands a slash command that arrives in the message | `opencode plugin @saketek/saki-builder --global` + `npx @saketek/saki-builder install --global` |
-| `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | `codex plugin add saki-builder@saketek` |
+| `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | `codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git` + `codex plugin add saki-builder@saketek` |
 
 ```bash
 # one-time provisioning
@@ -178,7 +188,9 @@ anything launches:
 $ saki build E22 --engine codex
 error: engine profile cannot resolve the saki-builder commands: codex profile does not resolve
 @saketek/saki-builder: /Users/me/.codex/config.toml registers no enabled saki-builder plugin and
-/Users/me/.codex/skills/build/SKILL.md is absent — run `codex plugin add saki-builder@saketek`
+/Users/me/.codex/skills/build/SKILL.md is absent — run:
+codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
+codex plugin add saki-builder@saketek
 (or bash scripts/install-codex-skills.sh to check)
 ```
 
