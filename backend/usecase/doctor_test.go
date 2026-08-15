@@ -2,6 +2,9 @@ package usecase
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/drayanaindra/saki-cli/backend/domain"
@@ -137,4 +140,33 @@ func TestDoctorService_Check(t *testing.T) {
 			t.Errorf("opencode.Fix = %q, want empty — opencode remediation is deferred (F5)", opencode.Fix)
 		}
 	})
+}
+
+// F2 slice 2, criterion 2.3's own wording: "the test fails if either drifts from the script". Neither
+// side is hardcoded a SECOND time here beyond these two reference lines — the installer script and
+// CodexInstallFix are each checked against them independently, so a change on EITHER side alone fails
+// the corresponding assertion.
+func TestCodexInstallFix_MatchesInstallerScript(t *testing.T) {
+	const marketplaceLine = "codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git"
+	const addLine = "codex plugin add saki-builder@saketek"
+
+	scriptPath := filepath.Join("..", "..", "scripts", "install-codex-skills.sh")
+	raw, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", scriptPath, err)
+	}
+	script := string(raw)
+	if !strings.Contains(script, marketplaceLine) {
+		t.Errorf("%s no longer contains %q — CodexInstallFix is now stale", scriptPath, marketplaceLine)
+	}
+	if !strings.Contains(script, addLine) {
+		t.Errorf("%s no longer contains %q — CodexInstallFix is now stale", scriptPath, addLine)
+	}
+
+	if !strings.Contains(CodexInstallFix, marketplaceLine) {
+		t.Errorf("CodexInstallFix = %q, missing %q", CodexInstallFix, marketplaceLine)
+	}
+	if !strings.Contains(CodexInstallFix, addLine) {
+		t.Errorf("CodexInstallFix = %q, missing %q", CodexInstallFix, addLine)
+	}
 }
