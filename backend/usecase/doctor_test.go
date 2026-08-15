@@ -101,4 +101,40 @@ func TestDoctorService_Check(t *testing.T) {
 			}
 		}
 	})
+
+	// F2 slice 2, criterion 2.3: codex's Fix is populated ONLY on a ProfileProof failure — a
+	// BinaryCheck failure has no authored remediation (installing the plugin doesn't fix a missing
+	// binary), and opencode's Fix stays empty (F5, deferred).
+	t.Run("codex profile failure populates Fix", func(t *testing.T) {
+		f := &fakeEngineProofs{profileErr: map[domain.RunEngine]error{
+			domain.EngineCodex: errors.New("codex profile does not resolve @saketek/saki-builder"),
+		}}
+		reports := NewDoctorService(f).Check(nil)
+		codex := reports[0]
+		if codex.Fix != CodexInstallFix {
+			t.Errorf("codex.Fix = %q, want %q", codex.Fix, CodexInstallFix)
+		}
+	})
+
+	t.Run("codex binary failure leaves Fix empty", func(t *testing.T) {
+		f := &fakeEngineProofs{binaryErr: map[domain.RunEngine]error{
+			domain.EngineCodex: errors.New("engine binary not found on PATH (codex)"),
+		}}
+		reports := NewDoctorService(f).Check(nil)
+		codex := reports[0]
+		if codex.Fix != "" {
+			t.Errorf("codex.Fix = %q, want empty — a missing binary has no authored remediation yet", codex.Fix)
+		}
+	})
+
+	t.Run("opencode never gets a Fix", func(t *testing.T) {
+		f := &fakeEngineProofs{profileErr: map[domain.RunEngine]error{
+			domain.EngineOpencode: errors.New("opencode profile does not resolve @saketek/saki-builder"),
+		}}
+		reports := NewDoctorService(f).Check(nil)
+		opencode := reports[1]
+		if opencode.Fix != "" {
+			t.Errorf("opencode.Fix = %q, want empty — opencode remediation is deferred (F5)", opencode.Fix)
+		}
+	})
 }

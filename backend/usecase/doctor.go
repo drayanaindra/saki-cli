@@ -7,6 +7,14 @@ import "github.com/drayanaindra/saki-cli/backend/domain"
 // criterion 1.3 pins.
 var DoctorEngines = []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode}
 
+// CodexInstallFix is codex's complete two-line remediation — the SAME text infra.CodexSkillsProof
+// embeds in its spawn-refusal error (backend/infra/codex.go), so the operator-facing error and
+// doctor's Fix field can never drift out of sync (F2 slice 2, criterion 2.3). Lives here, not in
+// infra, so infra can depend on it (infra already imports usecase) without usecase depending back on
+// infra — the hexagonal layering direction stays intact.
+const CodexInstallFix = "codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git\n" +
+	"codex plugin add saki-builder@saketek"
+
 // DoctorService computes a pre-dispatch provisioning verdict per DoctorEngines. It never spawns
 // anything (rule 5) and never installs/writes/repairs (rule 1) — Check's only capability is the
 // EngineProofs port, so both are structural guarantees, not merely observed behavior.
@@ -39,6 +47,9 @@ func (s DoctorService) checkOne(engine domain.RunEngine, profile string, configD
 	}
 	if err := s.proofs.ProfileProof(engine, configDir); err != nil {
 		report.Status, report.Reason = domain.StatusFailed, err.Error()
+		if engine == domain.EngineCodex {
+			report.Fix = CodexInstallFix
+		}
 	}
 	return report
 }
