@@ -7,6 +7,9 @@ import { registerDoctorTool } from './tools/doctor.js'
 import { registerRoadmapListTool } from './tools/roadmap-list.js'
 import { registerRunsTool } from './tools/runs.js'
 import { registerPrdShowTool } from './tools/prd-show.js'
+import { registerRunStartTool } from './tools/run-start.js'
+import { registerRunTailTool } from './tools/run-tail.js'
+import { registerRunStopTool } from './tools/run-stop.js'
 
 // package.json sits outside tsconfig's rootDir ("src"), so a static import would fail tsc regardless of
 // resolveJsonModule — read it at runtime instead.
@@ -23,5 +26,8 @@ export function createSakiMcpServer(ctx: Ctx): McpServer {
   registerRoadmapListTool(server, makeToolCtx)
   registerRunsTool(server, makeToolCtx)
   registerPrdShowTool(server, makeToolCtx)
+  registerRunStartTool(server, makeToolCtx)
+  registerRunTailTool(server, makeToolCtx)
+  registerRunStopTool(server, makeToolCtx)
   return server
 }

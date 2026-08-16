@@ -152,9 +152,8 @@ saki screenshots                             # /qa screenshots + their urls
 
 ### `saki mcp` — the same journey commands as typed tools
 
-Starts a stdio MCP server for agent harnesses that prefer a tool call over a shell. Slices 1-2 register 5
-read-only tools; slices 3-4 add the run lifecycle and branch/MR/PRD-lock tools (13 total — see
-`tasks/prd-mcp-surface-saki-mcp.md`):
+Starts a stdio MCP server for agent harnesses that prefer a tool call over a shell. Slices 1-3 register 8
+tools; slice 4 adds the branch/MR/PRD-lock tools (13 total — see `tasks/prd-mcp-surface-saki-mcp.md`):
 
 | Tool | Wraps | Args |
 |---|---|---|
@@ -163,6 +162,9 @@ read-only tools; slices 3-4 add the run lifecycle and branch/MR/PRD-lock tools (
 | `saki_roadmap_list` | `saki roadmap list` | none |
 | `saki_runs` | `saki runs` | none |
 | `saki_prd_show` | `saki prd show` | `target` (roadmap id or `.md` path; a path resolving outside the repo cwd is refused before `cmdPrdShow` ever runs — an MCP tool's arguments can be steered by content already in the calling agent's context, unlike a human-typed CLI path) |
+| `saki_run_start` | `saki run <verb>` | `verb`, `target?`, `profile?`, `engine?`, `heal?` — starts a run and returns immediately with a `runId`; no `--follow` (call `saki_run_tail` separately to block for the result). For `verb:"build"`, a `target` resolving outside the repo cwd is refused the same way `saki_prd_show`'s is |
+| `saki_run_tail` | `saki run tail` | `runId` — blocks until the run reaches a terminal state, mirroring the CLI's own untimed behavior |
+| `saki_run_stop` | `saki run stop` | `runId` |
 
 Every tool wraps the exact same `cmd*` function the CLI itself calls, so the exit-code contract is
 translated once, never forked: a returned `ExitCode !== EXIT.OK` or a thrown `CliError` both map to

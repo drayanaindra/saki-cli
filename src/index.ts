@@ -10,11 +10,11 @@ import { cmdStatus } from './commands/status.js'
 import { cmdRuns, cmdRunStop, cmdRunTail } from './commands/runs.js'
 import {
   cmdRunStart,
-  isRunVerb,
+  assertRunVerb,
   RUN_VERBS,
   targetIsOptional,
   takesNoTarget,
-  isRunEngine,
+  assertRunEngine,
   RUN_ENGINES,
   supportsHeal,
   type RunVerb,
@@ -67,17 +67,7 @@ function startRun(
   }
   // Validate the engine here rather than letting the backend 422 — a typo should be a usage error
   // with the valid values named, not a round-trip.
-  let engine
-  if (typeof flags.engine === 'string') {
-    if (!isRunEngine(flags.engine)) {
-      throw new CliError(
-        `unknown engine: ${flags.engine}`,
-        EXIT.USAGE,
-        `expected one of ${RUN_ENGINES.join(', ')}`,
-      )
-    }
-    engine = flags.engine
-  }
+  const engine = typeof flags.engine === 'string' ? assertRunEngine(flags.engine) : undefined
   return cmdRunStart(ctx, verb, args[0] ?? '', {
     follow: flags.follow === true,
     profile: typeof flags.profile === 'string' ? flags.profile : undefined,
@@ -185,17 +175,7 @@ const COMMANDS: CommandDef[] = [
     // Superset: the nested form must accept --heal so `saki run wrap --heal` works. Per-verb
     // rejection still happens in cmdRunStart / flagsForVerb for the aliases.
     flags: { ...RUN_FLAGS, heal: 'boolean' },
-    run: (ctx, rest, flags) => {
-      const verb = rest[0] ?? ''
-      if (!isRunVerb(verb)) {
-        throw new CliError(
-          `unknown run verb: ${verb || '(none)'}`,
-          EXIT.USAGE,
-          `expected one of ${RUN_VERBS.join(', ')} — or \`run tail\` / \`run stop\``,
-        )
-      }
-      return startRun(ctx, verb, rest.slice(1), flags)
-    },
+    run: (ctx, rest, flags) => startRun(ctx, assertRunVerb(rest[0] ?? ''), rest.slice(1), flags),
   },
   {
     path: ['runs'],

@@ -204,15 +204,18 @@ describe('saki mcp — slice 2 read-only tools', () => {
     expect(secondContent.some((c) => c.text.includes('do X') || c.text.includes('Exited with code 1'))).toBe(false)
   })
 
-  it('mcp2: tools/list has 5 tools', async () => {
+  it('mcp2: tools/list carries all 5 slice 1-2 tools, each read-only', async () => {
+    // The exact tool COUNT is slice 3's assertion (src/commands/mcp-slice3.test.ts, "tools/list has 8
+    // tools") — this only pins that these 5 are present and read-only, so a later slice adding tools
+    // doesn't force an edit here too (same reasoning as mcp.test.ts's narrowed assertion, slice 2).
     const client = routedClient({})
     const mcpClient = await connectedClient(client)
     const { tools } = await mcpClient.listTools()
-    expect(tools).toHaveLength(5)
-    const names = tools.map((t) => t.name).sort()
-    expect(names).toEqual(['saki_doctor', 'saki_prd_show', 'saki_roadmap_list', 'saki_runs', 'saki_status'].sort())
-    for (const t of tools) {
-      expect(t.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
+    const names = ['saki_doctor', 'saki_prd_show', 'saki_roadmap_list', 'saki_runs', 'saki_status']
+    const byName = Object.fromEntries(tools.map((t) => [t.name, t]))
+    for (const name of names) {
+      expect(byName[name]).toBeTruthy()
+      expect(byName[name]?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
     }
   })
 })
