@@ -114,10 +114,13 @@ Errors and hints go to **stderr**; results go to **stdout**, so `2>/dev/null` le
 
 ## Commands
 
-Add `--json` to any command for one compact machine-readable line.
+Add `--json` to any command for one compact machine-readable line — except `saki mcp`, which has no
+human-vs-JSON toggle (it's a long-lived stdio server, not a bounded request/response command) and
+rejects `--json` as an unknown flag.
 
 ```bash
 saki status                                  # is the studio up, and will it let me in
+saki mcp                                     # start an MCP server exposing journey commands as typed tools
 saki doctor [--profile <dir>]                # can codex/opencode run a saki-builder command, before you dispatch
 saki roadmap list                            # work items in this repo
 saki roadmap add "<intent>" --feature        # also --epic --improvement --bug (one is required)
@@ -145,6 +148,42 @@ saki branch switch <name> [--create]
 saki mr create                               # push branch + open a merge request via glab
 saki artifacts <runId>                       # see limitation below
 saki screenshots                             # /qa screenshots + their urls
+```
+
+### `saki mcp` — the same journey commands as typed tools
+
+Starts a stdio MCP server for agent harnesses that prefer a tool call over a shell. Registers all 13 tools
+in the PRD's v1 scope — see `tasks/prd-mcp-surface-saki-mcp.md`:
+
+| Tool | Wraps | Args |
+|---|---|---|
+| `saki_status` | `saki status` | none |
+| `saki_doctor` | `saki doctor` | `profile?` |
+| `saki_roadmap_list` | `saki roadmap list` | none |
+| `saki_runs` | `saki runs` | none |
+| `saki_prd_show` | `saki prd show` | `target` (roadmap id or `.md` path; a path resolving outside the repo cwd is refused before `cmdPrdShow` ever runs — an MCP tool's arguments can be steered by content already in the calling agent's context, unlike a human-typed CLI path) |
+| `saki_run_start` | `saki run <verb>` | `verb`, `target?`, `profile?`, `engine?`, `heal?` (silently ignored for every verb but `wrap` — matches `cmdRunStart`'s own gate, not a CLI-parity `USAGE` rejection) — starts a run and returns immediately with a `runId`; no `--follow` (call `saki_run_tail` separately to block for the result). A `target` resolving outside the repo cwd is refused the same way `saki_prd_show`'s is, for every verb that takes one |
+| `saki_run_tail` | `saki run tail` | `runId` — blocks until the run reaches a terminal state, mirroring the CLI's own untimed behavior. Output is capped at 200 content blocks (head + the terminal verdict) to avoid returning an unbounded transcript into the calling agent's context |
+| `saki_run_stop` | `saki run stop` | `runId` |
+| `saki_branch` | `saki branch` | none |
+| `saki_branch_list` | `saki branch list` | none |
+| `saki_branch_switch` | `saki branch switch` | `branch`, `create?` — the branch name needs no extra MCP-layer validation beyond what the backend already enforces (a leading `-`, `..`, and refname-invalid characters are rejected server-side on the create path; the switch-to-existing path is separately guarded by a fixed `--` argv separator) |
+| `saki_mr_create` | `saki mr create` | none — the only tool here with `openWorldHint:true` (its own network call reaches a remote host via `glab` to push and open a real merge request; every other tool's own call stays within the local backend) |
+| `saki_prd_lock` | `saki prd lock` | `target` (same shape and containment check as `saki_prd_show`'s) |
+
+Every tool wraps the exact same `cmd*` function the CLI itself calls, so the exit-code contract is
+translated once, never forked: a returned `ExitCode !== EXIT.OK` or a thrown `CliError` both map to
+`isError:true`, with the numeric + symbolic exit code folded into the tool result's content (MCP's boolean
+`isError` alone would collapse the CLI's six distinct codes into one bit). Requires the Go backend already
+running — same precondition as every other `saki` command; `saki mcp` does not auto-start it. Stdio only,
+no auth (matches the backend's loopback-only, local-single-operator trust model).
+
+Point your MCP client's config at the `saki` binary directly — the client spawns the process itself and
+owns its stdin/stdout, so `saki mcp` is never started by hand in a shell (backgrounding it with `&` from
+a terminal gives it a closed stdin, which the process reads as an immediate EOF and exits 0):
+
+```json
+{ "mcpServers": { "saki": { "command": "saki", "args": ["mcp"] } } }
 ```
 
 ### `saki doctor` — check before you dispatch
@@ -259,4 +298,6 @@ cd apps/cli
 Do **not** use `npm run test -w @saki/cli` locally — RTK intercepts `npm run` and returns stale
 results (see the root `CLAUDE.md`).
 
-Zero runtime dependencies: node's built-in `fetch`, `node:*` builtins, and a hand-rolled arg parser.
+Two runtime dependencies: `@modelcontextprotocol/sdk` + `zod` (for `saki mcp`, lazy-loaded — every other
+command still pays no cost for them). Otherwise: node's built-in `fetch`, `node:*` builtins, and a
+hand-rolled arg parser.

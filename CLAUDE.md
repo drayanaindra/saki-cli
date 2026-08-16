@@ -47,6 +47,10 @@ reaching into another context's `infra`.
   `os/exec` or `infra` is a layering break, not a shortcut.
 - **CLI = Stage 2 (modular).** One file per command in `src/commands/`, shared plumbing at
   `src/{args,client,ctx,exit,output,sse,resolve,routes}.ts`. Commands never import each other.
+  `saki mcp` (`src/commands/mcp.ts`) is the one sanctioned exception: it composes `src/mcp/` (the
+  MCP tool-registration layer, one file per tool under `src/mcp/tools/`), which itself imports the
+  other commands' `cmd*` functions unchanged — that reuse is the whole point of the MCP surface
+  (never re-implement a command's logic for its MCP tool).
 - Transition triggers + the read-only detector: `/saki-builder:arch-check`.
 
 ## Project rules

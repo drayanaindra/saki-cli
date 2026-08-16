@@ -1,0 +1,62 @@
+import { describe, it, expect } from 'vitest'
+import { exitCodeToToolResult, type CapturedIO } from './result.js'
+import { EXIT, CliError } from '../exit.js'
+
+function captured(out: string[] = []): CapturedIO {
+  return { out }
+}
+
+describe('exitCodeToToolResult', () => {
+  it('EXIT.OK return -> isError:false, content is out only', async () => {
+    const io = captured(['{"ok":true}'])
+    const result = await exitCodeToToolResult(async () => EXIT.OK, io)
+    expect(result.isError).toBe(false)
+    expect(result.content).toEqual([{ type: 'text', text: '{"ok":true}' }])
+  })
+
+  it('non-OK return -> isError:true, appends the numeric+symbolic exit code', async () => {
+    const io = captured(['{"backendReachable":false}'])
+    const result = await exitCodeToToolResult(async () => EXIT.UNREACHABLE, io)
+    expect(result.isError).toBe(true)
+    expect(result.content).toEqual([
+      { type: 'text', text: '{"backendReachable":false}' },
+      { type: 'text', text: 'Exited with code 3 (UNREACHABLE)' },
+    ])
+  })
+
+  it('thrown CliError with a hint -> isError:true, code line + separate hint block', async () => {
+    const io = captured()
+    const result = await exitCodeToToolResult(async () => {
+      throw new CliError('cannot reach the studio', EXIT.UNREACHABLE, 'start it with npm run dev:backend')
+    }, io)
+    expect(result.isError).toBe(true)
+    expect(result.content).toEqual([
+      { type: 'text', text: 'Exited with code 3 (UNREACHABLE): cannot reach the studio' },
+      { type: 'text', text: 'start it with npm run dev:backend' },
+    ])
+  })
+
+  it('thrown CliError with no hint -> isError:true, exactly one code-line block, no "undefined" leaks', async () => {
+    const io = captured()
+    const result = await exitCodeToToolResult(async () => {
+      throw new CliError('boom', EXIT.ERROR)
+    }, io)
+    expect(result.isError).toBe(true)
+    expect(result.content).toEqual([{ type: 'text', text: 'Exited with code 1 (ERROR): boom' }])
+    for (const block of result.content) expect(block.text).not.toContain('undefined')
+  })
+
+  it('thrown plain Error -> isError:true, EXIT.ERROR-shaped, message only (never the stack)', async () => {
+    const io = captured()
+    const err = new Error('boom')
+    const result = await exitCodeToToolResult(async () => {
+      throw err
+    }, io)
+    expect(result.isError).toBe(true)
+    expect(result.content).toEqual([{ type: 'text', text: 'Exited with code 1 (ERROR): boom' }])
+    const allText = result.content.map((c) => c.text).join('\n')
+    const stackLine = err.stack ?? 'placeholder-never-matches'
+    expect(allText).not.toContain(stackLine)
+    expect(allText.toLowerCase()).not.toContain('.ts:')
+  })
+})

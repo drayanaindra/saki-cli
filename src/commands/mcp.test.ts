@@ -1,0 +1,165 @@
+import { describe, it, expect } from 'vitest'
+import { spawn } from 'node:child_process'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { createSakiMcpServer } from '../mcp/server.js'
+import { StudioClient } from '../client.js'
+import { makeCtx } from '../ctx.js'
+
+// routedCtx pattern from src/commands/doctor.test.ts:13-38 — `down: true` rejects the fetch (a dead
+// socket), matching how a real UNREACHABLE backend surfaces.
+function routedClient(routes: Record<string, { status?: number; body?: unknown; down?: boolean }>) {
+  const impl = (async (url: string | URL) => {
+    const u = String(url)
+    const key = Object.keys(routes).find((k) => u.includes(k))
+    const r = key ? routes[key] : { status: 404, body: { error: 'no stub' } }
+    if (r.down) throw new TypeError('fetch failed')
+    const status = r.status ?? 200
+    return {
+      ok: status < 300,
+      status,
+      json: async () => r.body,
+      text: async () => JSON.stringify(r.body ?? ''),
+    } as unknown as Response
+  }) as unknown as typeof fetch
+  return new StudioClient({ baseUrl: 'http://s.test', fetchImpl: impl })
+}
+
+// Connects a fresh createSakiMcpServer instance to one half of an in-memory transport pair, and an SDK
+// Client to the other half — the fast, real-server path the rplan-review testability fix (Step 4) exists
+// to enable, in place of spawning a real process for every scenario.
+async function connectedClient(client: StudioClient) {
+  const ctx = makeCtx({ client, cwd: '/repo' })
+  const server = createSakiMcpServer(ctx)
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair()
+  const mcpClient = new Client({ name: 'test-client', version: '0.0.0' })
+  await Promise.all([server.connect(serverTransport), mcpClient.connect(clientTransport)])
+  return mcpClient
+}
+
+describe('saki mcp — saki_status tool', () => {
+  it('happy path: isError:false, content matches the real cmdStatus --json body', async () => {
+    const client = routedClient({ '/api/health': { body: { ok: true, service: 'saki-backend' } } })
+    const mcpClient = await connectedClient(client)
+    const result = await mcpClient.callTool({ name: 'saki_status', arguments: {} })
+    expect(result.isError).toBe(false)
+    const content = result.content as { type: string; text: string }[]
+    expect(content).toHaveLength(1)
+    const body = JSON.parse(content[0].text)
+    expect(body.backendReachable).toBe(true)
+  })
+
+  it('backend unreachable (returned-code path): isError:true, real body + synthesized exit-code line', async () => {
+    const client = routedClient({ '/api/health': { down: true } })
+    const mcpClient = await connectedClient(client)
+    const result = await mcpClient.callTool({ name: 'saki_status', arguments: {} })
+    expect(result.isError).toBe(true)
+    const content = result.content as { type: string; text: string }[]
+    const body = JSON.parse(content[0].text)
+    expect(body.backendReachable).toBe(false)
+    expect(content[1].text).toBe('Exited with code 3 (UNREACHABLE)')
+  })
+
+  it('tools/list carries saki_status, with inputSchema and annotations', async () => {
+    // The exact tool COUNT is slice 2's assertion (src/commands/mcp-slice2.test.ts, "tools/list has 5
+    // tools") — this only pins saki_status's own shape, so later slices adding tools don't force an
+    // edit here too.
+    const client = routedClient({})
+    const mcpClient = await connectedClient(client)
+    const { tools } = await mcpClient.listTools()
+    const status = tools.find((t) => t.name === 'saki_status')
+    expect(status).toBeTruthy()
+    expect(status?.inputSchema).toBeTruthy()
+    expect(status?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
+  })
+
+  it('back-to-back calls are isolated — reachable then unreachable, no leaked state', async () => {
+    // A mutable route table: the first call sees a healthy backend, the second sees it go down.
+    // Proves the fresh-captured-per-call fix (a hoisted buffer would leak the first call's content
+    // into the second, or report the first call's isError:false on the second).
+    let down = false
+    const impl = (async (url: string | URL) => {
+      const u = String(url)
+      if (u.includes('/api/health')) {
+        if (down) throw new TypeError('fetch failed')
+        return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => '{}' } as unknown as Response
+      }
+      return { ok: false, status: 404, json: async () => ({}), text: async () => '' } as unknown as Response
+    }) as unknown as typeof fetch
+    const client = new StudioClient({ baseUrl: 'http://s.test', fetchImpl: impl })
+    const mcpClient = await connectedClient(client)
+
+    const first = await mcpClient.callTool({ name: 'saki_status', arguments: {} })
+    expect(first.isError).toBe(false)
+    const firstBody = JSON.parse((first.content as { text: string }[])[0].text)
+    expect(firstBody.backendReachable).toBe(true)
+
+    down = true
+    const second = await mcpClient.callTool({ name: 'saki_status', arguments: {} })
+    expect(second.isError).toBe(true)
+    const secondContent = second.content as { type: string; text: string }[]
+    const secondBody = JSON.parse(secondContent[0].text)
+    expect(secondBody.backendReachable).toBe(false)
+    expect(secondContent[1].text).toBe('Exited with code 3 (UNREACHABLE)')
+    // no trace of the first (healthy) call's body leaked into the second response
+    expect(secondContent.some((c) => c.text.includes('"backendReachable":true'))).toBe(false)
+  })
+
+  it('unregistered tool name errors cleanly — no hang, no crash', async () => {
+    const client = routedClient({})
+    const mcpClient = await connectedClient(client)
+    const result = await mcpClient.callTool({ name: 'saki_nonexistent', arguments: {} })
+    expect(result.isError).toBe(true)
+    const content = result.content as { type: string; text: string }[]
+    expect(content[0].text).toContain('saki_nonexistent')
+  })
+})
+
+describe('saki mcp — real process', () => {
+  it(
+    'stdout is pure MCP frames, and the process exits 0 on stdin close',
+    async () => {
+      const child = spawn('node_modules/.bin/tsx', ['src/index.ts', 'mcp'], {
+        cwd: process.cwd(),
+        env: { ...process.env, SAKI_BACKEND_URL: 'http://127.0.0.1:1' },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+
+      const stdoutChunks: Buffer[] = []
+      let sawToolCallResponse = false
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdoutChunks.push(chunk)
+        if (Buffer.concat(stdoutChunks).toString('utf8').includes('"id":2')) sawToolCallResponse = true
+      })
+
+      const send = (msg: unknown) => child.stdin.write(JSON.stringify(msg) + '\n')
+      send({ jsonrpc: '2.0', method: 'initialize', id: 0, params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '0' } } })
+      send({ jsonrpc: '2.0', method: 'notifications/initialized' })
+      send({ jsonrpc: '2.0', method: 'tools/list', id: 1 })
+      send({ jsonrpc: '2.0', method: 'tools/call', id: 2, params: { name: 'saki_status', arguments: {} } })
+
+      // Wait on the actual tools/call response (id:2), not a fixed clock delay — a cold tsx boot +
+      // handshake can exceed any fixed guess on a loaded machine.
+      const deadline = Date.now() + 12_000
+      while (!sawToolCallResponse && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      expect(sawToolCallResponse).toBe(true)
+
+      const exitPromise = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)))
+      child.stdin.end()
+      const exitCode = await Promise.race([
+        exitPromise,
+        new Promise<number | null>((_, reject) => setTimeout(() => reject(new Error('process did not exit within 10s')), 10_000)),
+      ])
+
+      const stdout = Buffer.concat(stdoutChunks).toString('utf8')
+      const lines = stdout.split('\n').filter((l) => l.trim().length > 0)
+      expect(lines.length).toBeGreaterThan(0)
+      const parsed = lines.map((line) => JSON.parse(line))
+      expect(parsed.some((m) => m.id === 2 && m.result)).toBe(true)
+      expect(exitCode).toBe(0)
+    },
+    15_000,
+  )
+})

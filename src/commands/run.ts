@@ -28,6 +28,17 @@ export function isRunVerb(v: string): v is RunVerb {
   return (RUN_VERBS as readonly string[]).includes(v)
 }
 
+// Shared by the CLI's `['run']` handler (index.ts) and the `saki_run_start` MCP tool, so an unknown verb
+// produces the byte-identical message/hint on both surfaces — one function, not a hand-copied string.
+export function assertRunVerb(v: string): RunVerb {
+  if (isRunVerb(v)) return v
+  fail(
+    `unknown run verb: ${v || '(none)'}`,
+    EXIT.USAGE,
+    `expected one of ${RUN_VERBS.join(', ')} — or \`run tail\` / \`run stop\``,
+  )
+}
+
 // Verbs that take NO target: `reviewer` reviews the git diff, `wrap` gates the whole repo. Handing
 // either an id or a path is a mistake worth rejecting rather than forwarding as a bogus argument.
 const NO_TARGET_VERBS = new Set<RunVerb>(['reviewer', 'wrap'])
@@ -82,6 +93,13 @@ export type RunEngine = (typeof RUN_ENGINES)[number]
 
 export function isRunEngine(v: string): v is RunEngine {
   return (RUN_ENGINES as readonly string[]).includes(v)
+}
+
+// Shared by index.ts's `startRun` helper and the `saki_run_start` MCP tool — same byte-identical
+// message/hint reasoning as `assertRunVerb` above.
+export function assertRunEngine(v: string): RunEngine {
+  if (isRunEngine(v)) return v
+  fail(`unknown engine: ${v}`, EXIT.USAGE, `expected one of ${RUN_ENGINES.join(', ')}`)
 }
 
 export interface RunStartFlags {

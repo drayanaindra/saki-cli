@@ -1,7 +1,8 @@
 import { EXIT, fail } from './exit.js'
 
-// A minimal argv parser. Deliberately hand-rolled: the CLI ships zero runtime dependencies so an
-// agent can run it straight out of the workspace with no install step beyond `npm ci`.
+// A minimal argv parser. Deliberately hand-rolled: this module has zero runtime dependencies so it
+// parses every command's args, including `saki mcp`, before that command's own (lazy-loaded) deps
+// are ever pulled in.
 
 export type FlagKind = 'string' | 'boolean'
 export type FlagSpec = Readonly<Record<string, FlagKind>>
