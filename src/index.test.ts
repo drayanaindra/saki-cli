@@ -95,12 +95,16 @@ describe('matchCommand', () => {
   it('returns undefined for an unknown command', () => {
     expect(matchCommand(['frobnicate'])).toBeUndefined()
   })
+
+  it('matches `mcp`', () => {
+    expect(matchCommand(['mcp'])?.def.path).toEqual(['mcp'])
+  })
 })
 
 describe('helpText', () => {
   it('lists every command group and the exit-code contract', () => {
     const h = helpText()
-    for (const c of ['status', 'roadmap list', 'run tail', 'runs', 'prd show', 'proto', 'branch', 'mr create', 'artifacts', 'screenshots']) {
+    for (const c of ['status', 'mcp', 'roadmap list', 'run tail', 'runs', 'prd show', 'proto', 'branch', 'mr create', 'artifacts', 'screenshots']) {
       expect(h).toContain(c)
     }
     expect(h).toContain('SAKI_STUDIO_URL')

@@ -32,6 +32,7 @@ import {
 } from './commands/repo.js'
 import { cmdArtifacts } from './commands/artifacts.js'
 import { cmdDoctor } from './commands/doctor.js'
+import { cmdMcp } from './commands/mcp.js'
 
 // Flags every command accepts.
 const COMMON: FlagSpec = { json: 'boolean', cwd: 'string' }
@@ -133,6 +134,13 @@ const COMMANDS: CommandDef[] = [
     summary: 'are both studio servers up, and will they let me in',
     flags: COMMON,
     run: (ctx) => cmdStatus(ctx),
+  },
+  {
+    path: ['mcp'],
+    usage: 'saki mcp',
+    summary: "start an MCP server exposing saki's journey commands as typed tools",
+    flags: { cwd: 'string' },
+    run: (ctx) => cmdMcp(ctx),
   },
   {
     path: ['doctor'],

@@ -118,6 +118,7 @@ Add `--json` to any command for one compact machine-readable line.
 
 ```bash
 saki status                                  # is the studio up, and will it let me in
+saki mcp                                     # start an MCP server exposing journey commands as typed tools
 saki doctor [--profile <dir>]                # can codex/opencode run a saki-builder command, before you dispatch
 saki roadmap list                            # work items in this repo
 saki roadmap add "<intent>" --feature        # also --epic --improvement --bug (one is required)
@@ -145,6 +146,22 @@ saki branch switch <name> [--create]
 saki mr create                               # push branch + open a merge request via glab
 saki artifacts <runId>                       # see limitation below
 saki screenshots                             # /qa screenshots + their urls
+```
+
+### `saki mcp` — the same journey commands as typed tools
+
+Starts a stdio MCP server for agent harnesses that prefer a tool call over a shell. v1 registers
+`saki_status`; slices 2-4 add doctor, roadmap/PRD/run visibility, the full run lifecycle, and branch/MR
+tools (13 total — see `tasks/prd-mcp-surface-saki-mcp.md`). Every tool wraps the exact same `cmd*`
+function the CLI itself calls, so the exit-code contract is translated once, never forked: a returned
+`ExitCode !== EXIT.OK` or a thrown `CliError` both map to `isError:true`, with the numeric + symbolic exit
+code folded into the tool result's content (MCP's boolean `isError` alone would collapse the CLI's six
+distinct codes into one bit). Requires the Go backend already running — same precondition as every other
+`saki` command; `saki mcp` does not auto-start it. Stdio only, no auth (matches the backend's
+loopback-only, local-single-operator trust model).
+
+```bash
+saki mcp &                # point your MCP client's config at this process
 ```
 
 ### `saki doctor` — check before you dispatch
