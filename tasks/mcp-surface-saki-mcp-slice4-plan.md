@@ -259,8 +259,10 @@ runs — the pre-implementation pass is independent verification, not a substitu
 - [x] `npm run typecheck` passes
 - [x] `npm test` — all green
 - [x] `npm run test:coverage` — new files ≥ 80%
-- [ ] Dedicated security audit (mandatory, per this slice's original classification — caller-supplied
+- [x] Dedicated security audit (mandatory, per this slice's original classification — caller-supplied
       strings flowing toward git operations) is clean or its findings are fixed before this slice is done
+      — VERDICT: CLEAN, 0 findings (independently confirmed the branch-switch/prd-lock/mr-create
+      reasoning against the actual shipped code, not just the plan)
 
 ---
 
@@ -281,8 +283,24 @@ runs — the pre-implementation pass is independent verification, not a substitu
 > `backend/domain/lock.go:101-120`) beyond the MCP-layer guard, a defense-in-depth layer this plan's
 > Research section hadn't cited. QA found the two real gaps: an unfalsifiable "reflects the lock" test
 > design (fixed — a stateful stub proving causality) and an untested detached-HEAD path for `saki_branch`
-> with no stated trigger, unlike every other carried-forward gap (fixed — new case a2). Blocking: 0 → READY.
+> with no stated trigger, unlike every other carried-forward gap (fixed — new case a2).
+>
+> Reviewed AFTER implementation by a fresh-context reviewer + a dedicated mandatory security audit
+> (parallel passes), 2026-08-16, against commit a2139ad. Reviewer: APPROVE, 0 blockers — confirmed the
+> prd-lock trim-once discipline exactly matches prd-show.ts's/run-start.ts's pattern (no divergence found),
+> the create/switch argument threading is correct, and openWorldHint:true on saki_mr_create is intentional
+> and consistently the only such tool. Flagged (and fixed anyway, same pass): an unexercised `create:true`
+> path despite the test-capture machinery for it already existing in the file; a missing whitespace-bypass
+> regression test for saki_prd_lock (the exact bug class caught once already, commit 8a7431c, for its
+> sibling saki_prd_show — verified correct by two independent passes but shipped untested); a third
+> verbatim copy of the destructive-annotations literal (extracted to `DESTRUCTIVE_ANNOTATIONS`,
+> tool-ctx.ts); an overstated docs/comment claim about which tools reach outside the local backend
+> (narrowed). Security audit (independent, parallel): VERDICT CLEAN, 0 findings — confirmed the shipped
+> branch-switch.ts wiring faithfully forwards both arguments with no dangerous default, confirmed no
+> leading-space bypass exists against the actual prd-lock.ts code, confirmed saki_mr_create truly takes
+> zero caller input end to end. 362/362 tests green after fixes, every touched file at 100% coverage.
+> Blocking: 0 → READY. **13/13 tools shipped — PRD v1 scope complete.**
 
 ---
-Status: [x] Draft  [x] Annotated  [x] Approved (domain-expert pass clean — 2 test-design gaps fixed pre-implementation)  [ ] In Progress  [ ] Complete
+Status: [x] Draft  [x] Annotated  [x] Approved (domain-expert pass clean — 2 test-design gaps fixed pre-implementation)  [x] In Progress  [x] Complete (reviewer + security audit clean post-fix)
 Readiness Gate: [x] Evidence Ledger present  [x] Blocking Set empty  [x] Unknowns <= 2
