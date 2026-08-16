@@ -1,10 +1,11 @@
 import { EXIT, CliError, type ExitCode } from '../exit.js'
 
-// Buffers a command's ctx.write/writeErr output so it can be folded into an MCP tool result instead of
-// going to the real stdout/stderr (which the stdio MCP transport owns).
+// Buffers a command's ctx.write output so it can be folded into an MCP tool result instead of going to
+// the real stdout (which the stdio MCP transport owns for protocol frames). ctx.writeErr's diagnostic
+// lines are NOT captured here — the tool handler routes them straight to the real process stderr, which
+// is outside the MCP protocol channel and safe for local debugging (see registerStatusTool).
 export interface CapturedIO {
   out: string[]
-  err: string[]
 }
 
 export interface ToolResult {
@@ -46,7 +47,7 @@ export async function exitCodeToToolResult(
     } else {
       // Message only — never err.stack. This text can reach an MCP client's transcript; internal file
       // paths and stack frames have no reason to be there (the full error is local-debugging-only, via
-      // captured.err/ctx.writeErr, never this content).
+      // ctx.writeErr -> real stderr, never this content).
       const message = err instanceof Error ? err.message : String(err)
       content.push({ type: 'text', text: `Exited with code ${EXIT.ERROR} (${symbolicName(EXIT.ERROR)}): ${message}` })
     }

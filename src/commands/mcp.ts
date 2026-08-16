@@ -14,9 +14,16 @@ export async function cmdMcp(ctx: Ctx): Promise<ExitCode> {
     return EXIT.ERROR
   }
   // The SDK registers no 'end' listener on stdin itself, so nothing closes the process when the client
-  // disconnects unless we listen ourselves.
+  // disconnects unless we listen ourselves. Also resolve on the underlying Server's own onclose/onerror
+  // (server.connect() overwrites the transport's callbacks with its own) — a transport-level error after
+  // a successful connect would otherwise leave this promise pending forever.
   await new Promise<void>((resolve) => {
     process.stdin.on('end', () => resolve())
+    server.server.onclose = () => resolve()
+    server.server.onerror = (err) => {
+      ctx.writeErr(`error: MCP transport error: ${err.message}`)
+      resolve()
+    }
   })
   return EXIT.OK
 }

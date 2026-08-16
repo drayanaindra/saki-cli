@@ -114,7 +114,9 @@ Errors and hints go to **stderr**; results go to **stdout**, so `2>/dev/null` le
 
 ## Commands
 
-Add `--json` to any command for one compact machine-readable line.
+Add `--json` to any command for one compact machine-readable line — except `saki mcp`, which has no
+human-vs-JSON toggle (it's a long-lived stdio server, not a bounded request/response command) and
+rejects `--json` as an unknown flag.
 
 ```bash
 saki status                                  # is the studio up, and will it let me in
@@ -160,8 +162,12 @@ distinct codes into one bit). Requires the Go backend already running — same p
 `saki` command; `saki mcp` does not auto-start it. Stdio only, no auth (matches the backend's
 loopback-only, local-single-operator trust model).
 
-```bash
-saki mcp &                # point your MCP client's config at this process
+Point your MCP client's config at the `saki` binary directly — the client spawns the process itself and
+owns its stdin/stdout, so `saki mcp` is never started by hand in a shell (backgrounding it with `&` from
+a terminal gives it a closed stdin, which the process reads as an immediate EOF and exits 0):
+
+```json
+{ "mcpServers": { "saki": { "command": "saki", "args": ["mcp"] } } }
 ```
 
 ### `saki doctor` — check before you dispatch
@@ -276,4 +282,6 @@ cd apps/cli
 Do **not** use `npm run test -w @saki/cli` locally — RTK intercepts `npm run` and returns stale
 results (see the root `CLAUDE.md`).
 
-Zero runtime dependencies: node's built-in `fetch`, `node:*` builtins, and a hand-rolled arg parser.
+Two runtime dependencies: `@modelcontextprotocol/sdk` + `zod` (for `saki mcp`, lazy-loaded — every other
+command still pays no cost for them). Otherwise: node's built-in `fetch`, `node:*` builtins, and a
+hand-rolled arg parser.

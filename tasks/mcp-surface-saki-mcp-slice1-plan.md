@@ -291,16 +291,16 @@ stdin-'end' close mechanism (Step 5) + its test (Step 8); testability seam via `
 
 ## Success Criteria
 
-- [ ] 1.1 `saki_status` happy path — `isError:false`, content matches `saki status --json` verbatim (test: `mcp: saki_status happy path`)
-- [ ] 1.2 `saki_status` backend-unreachable — `isError:true`, real returned-code body + synthesized exit-code line present (test: `mcp: saki_status backend unreachable (returned-code path)`)
-- [ ] 1.3 `tools/list` — exactly `saki_status`, with `inputSchema:{}` + annotations (test: `mcp: tools/list contains exactly saki_status with schema+annotations`)
-- [ ] 1.4 real-process stdout purity + graceful close — every byte is a valid MCP frame, process exits 0 on stdin close (test: `mcp: real process stdout is pure MCP frames and exits 0 on stdin close`)
-- [ ] 1.5 transport-init failure — non-zero exit + stderr message (no stack trace), no hang (test: `mcp: transport init failure exits non-zero with a message, not a stack trace`)
-- [ ] Back-to-back call isolation (test: `mcp: back-to-back calls are isolated`)
-- [ ] Unregistered tool name handled cleanly (test: `mcp: unregistered tool name errors cleanly`)
-- [ ] `npm run typecheck` passes with the new files
-- [ ] `npm test` — all new + existing tests green
-- [ ] `npm run test:coverage` — new files at/above the 80% floor
+- [x] 1.1 `saki_status` happy path — `isError:false`, content matches `saki status --json` verbatim (test: `mcp: saki_status happy path`) — PASS
+- [x] 1.2 `saki_status` backend-unreachable — `isError:true`, real returned-code body + synthesized exit-code line present (test: `mcp: saki_status backend unreachable (returned-code path)`) — PASS
+- [x] 1.3 `tools/list` — exactly `saki_status`, with `inputSchema:{}` + annotations (test: `mcp: tools/list contains exactly saki_status with schema+annotations`) — PASS
+- [x] 1.4 real-process stdout purity + graceful close — every byte is a valid MCP frame, process exits 0 on stdin close (test: `mcp: real process stdout is pure MCP frames and exits 0 on stdin close`) — PASS
+- [x] 1.5 transport-init failure — non-zero exit + stderr message (no stack trace), no hang (test: `mcp: transport init failure exits non-zero with a message, not a stack trace`) — PASS
+- [x] Back-to-back call isolation (test: `mcp: back-to-back calls are isolated`) — PASS
+- [x] Unregistered tool name handled cleanly (test: `mcp: unregistered tool name errors cleanly`) — PASS
+- [x] `npm run typecheck` passes with the new files — PASS (exit 0)
+- [x] `npm test` — all new + existing tests green — PASS (21 files, 318 tests)
+- [x] `npm run test:coverage` — new files at/above the 80% floor — PASS (overall 95.03%; `src/mcp/`: 96%/80%/85.71%/100%; `mcp.ts`: 100%/50%/100%/100%)
 
 ---
 

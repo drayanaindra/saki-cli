@@ -16,14 +16,16 @@ export function registerStatusTool(server: McpServer, makeToolCtx: () => Pick<Ct
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async (_args: Record<string, never>) => {
-      const captured: CapturedIO = { out: [], err: [] }
+      const captured: CapturedIO = { out: [] }
       const base = makeToolCtx()
       const ctx = makeCtx({
         client: base.client,
         cwd: base.cwd,
         json: true,
         write: (s) => captured.out.push(s),
-        writeErr: (s) => captured.err.push(s),
+        // Real stderr, not captured — outside the MCP protocol channel (stdout), safe for local
+        // debugging (e.g. an operator running `saki mcp` with stderr redirected to a log file).
+        writeErr: (s) => process.stderr.write(`${s}\n`),
       })
       return exitCodeToToolResult(() => cmdStatus(ctx), captured)
     },

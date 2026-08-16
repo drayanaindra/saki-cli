@@ -32,7 +32,6 @@ import {
 } from './commands/repo.js'
 import { cmdArtifacts } from './commands/artifacts.js'
 import { cmdDoctor } from './commands/doctor.js'
-import { cmdMcp } from './commands/mcp.js'
 
 // Flags every command accepts.
 const COMMON: FlagSpec = { json: 'boolean', cwd: 'string' }
@@ -140,7 +139,9 @@ const COMMANDS: CommandDef[] = [
     usage: 'saki mcp',
     summary: "start an MCP server exposing saki's journey commands as typed tools",
     flags: { cwd: 'string' },
-    run: (ctx) => cmdMcp(ctx),
+    // Lazy-loaded: every other command pays no cost for the MCP SDK + zod, and an SDK load
+    // failure can't take down an unrelated command (measured 3x startup cost with a static import).
+    run: async (ctx) => (await import('./commands/mcp.js')).cmdMcp(ctx),
   },
   {
     path: ['doctor'],

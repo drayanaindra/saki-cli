@@ -70,15 +70,36 @@ describe('saki mcp — saki_status tool', () => {
     expect(tools[0].annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
   })
 
-  it('back-to-back calls are isolated — the second response excludes the first call data', async () => {
-    const client = routedClient({ '/api/health': { down: true } })
+  it('back-to-back calls are isolated — reachable then unreachable, no leaked state', async () => {
+    // A mutable route table: the first call sees a healthy backend, the second sees it go down.
+    // Proves the fresh-captured-per-call fix (a hoisted buffer would leak the first call's content
+    // into the second, or report the first call's isError:false on the second).
+    let down = false
+    const impl = (async (url: string | URL) => {
+      const u = String(url)
+      if (u.includes('/api/health')) {
+        if (down) throw new TypeError('fetch failed')
+        return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => '{}' } as unknown as Response
+      }
+      return { ok: false, status: 404, json: async () => ({}), text: async () => '' } as unknown as Response
+    }) as unknown as typeof fetch
+    const client = new StudioClient({ baseUrl: 'http://s.test', fetchImpl: impl })
     const mcpClient = await connectedClient(client)
+
     const first = await mcpClient.callTool({ name: 'saki_status', arguments: {} })
+    expect(first.isError).toBe(false)
+    const firstBody = JSON.parse((first.content as { text: string }[])[0].text)
+    expect(firstBody.backendReachable).toBe(true)
+
+    down = true
     const second = await mcpClient.callTool({ name: 'saki_status', arguments: {} })
-    const firstContent = first.content as { type: string; text: string }[]
+    expect(second.isError).toBe(true)
     const secondContent = second.content as { type: string; text: string }[]
-    expect(secondContent).toHaveLength(firstContent.length)
-    expect(second.isError).toBe(first.isError)
+    const secondBody = JSON.parse(secondContent[0].text)
+    expect(secondBody.backendReachable).toBe(false)
+    expect(secondContent[1].text).toBe('Exited with code 3 (UNREACHABLE)')
+    // no trace of the first (healthy) call's body leaked into the second response
+    expect(secondContent.some((c) => c.text.includes('"backendReachable":true'))).toBe(false)
   })
 
   it('unregistered tool name errors cleanly — no hang, no crash', async () => {
@@ -102,7 +123,11 @@ describe('saki mcp — real process', () => {
       })
 
       const stdoutChunks: Buffer[] = []
-      child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk))
+      let sawToolCallResponse = false
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdoutChunks.push(chunk)
+        if (Buffer.concat(stdoutChunks).toString('utf8').includes('"id":2')) sawToolCallResponse = true
+      })
 
       const send = (msg: unknown) => child.stdin.write(JSON.stringify(msg) + '\n')
       send({ jsonrpc: '2.0', method: 'initialize', id: 0, params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '0' } } })
@@ -110,8 +135,13 @@ describe('saki mcp — real process', () => {
       send({ jsonrpc: '2.0', method: 'tools/list', id: 1 })
       send({ jsonrpc: '2.0', method: 'tools/call', id: 2, params: { name: 'saki_status', arguments: {} } })
 
-      // give the process time to answer before closing stdin
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      // Wait on the actual tools/call response (id:2), not a fixed clock delay — a cold tsx boot +
+      // handshake can exceed any fixed guess on a loaded machine.
+      const deadline = Date.now() + 12_000
+      while (!sawToolCallResponse && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      expect(sawToolCallResponse).toBe(true)
 
       const exitPromise = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)))
       child.stdin.end()
@@ -123,9 +153,8 @@ describe('saki mcp — real process', () => {
       const stdout = Buffer.concat(stdoutChunks).toString('utf8')
       const lines = stdout.split('\n').filter((l) => l.trim().length > 0)
       expect(lines.length).toBeGreaterThan(0)
-      for (const line of lines) {
-        expect(() => JSON.parse(line)).not.toThrow()
-      }
+      const parsed = lines.map((line) => JSON.parse(line))
+      expect(parsed.some((m) => m.id === 2 && m.result)).toBe(true)
       expect(exitCode).toBe(0)
     },
     15_000,
