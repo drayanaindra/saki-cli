@@ -2,6 +2,10 @@ import { createRequire } from 'node:module'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Ctx } from '../ctx.js'
 import { registerStatusTool } from './tools/status.js'
+import { registerDoctorTool } from './tools/doctor.js'
+import { registerRoadmapListTool } from './tools/roadmap-list.js'
+import { registerRunsTool } from './tools/runs.js'
+import { registerPrdShowTool } from './tools/prd-show.js'
 
 // package.json sits outside tsconfig's rootDir ("src"), so a static import would fail tsc regardless of
 // resolveJsonModule — read it at runtime instead.
@@ -12,6 +16,11 @@ const packageVersion: string = createRequire(import.meta.url)('../../package.jso
 // process and for fast in-memory integration tests.
 export function createSakiMcpServer(ctx: Ctx): McpServer {
   const server = new McpServer({ name: 'saki', version: packageVersion })
-  registerStatusTool(server, () => ({ client: ctx.client, cwd: ctx.cwd }))
+  const makeToolCtx = (): Pick<Ctx, 'client' | 'cwd'> => ({ client: ctx.client, cwd: ctx.cwd })
+  registerStatusTool(server, makeToolCtx)
+  registerDoctorTool(server, makeToolCtx)
+  registerRoadmapListTool(server, makeToolCtx)
+  registerRunsTool(server, makeToolCtx)
+  registerPrdShowTool(server, makeToolCtx)
   return server
 }

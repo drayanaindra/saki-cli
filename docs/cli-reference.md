@@ -152,15 +152,24 @@ saki screenshots                             # /qa screenshots + their urls
 
 ### `saki mcp` — the same journey commands as typed tools
 
-Starts a stdio MCP server for agent harnesses that prefer a tool call over a shell. v1 registers
-`saki_status`; slices 2-4 add doctor, roadmap/PRD/run visibility, the full run lifecycle, and branch/MR
-tools (13 total — see `tasks/prd-mcp-surface-saki-mcp.md`). Every tool wraps the exact same `cmd*`
-function the CLI itself calls, so the exit-code contract is translated once, never forked: a returned
-`ExitCode !== EXIT.OK` or a thrown `CliError` both map to `isError:true`, with the numeric + symbolic exit
-code folded into the tool result's content (MCP's boolean `isError` alone would collapse the CLI's six
-distinct codes into one bit). Requires the Go backend already running — same precondition as every other
-`saki` command; `saki mcp` does not auto-start it. Stdio only, no auth (matches the backend's
-loopback-only, local-single-operator trust model).
+Starts a stdio MCP server for agent harnesses that prefer a tool call over a shell. Slices 1-2 register 5
+read-only tools; slices 3-4 add the run lifecycle and branch/MR/PRD-lock tools (13 total — see
+`tasks/prd-mcp-surface-saki-mcp.md`):
+
+| Tool | Wraps | Args |
+|---|---|---|
+| `saki_status` | `saki status` | none |
+| `saki_doctor` | `saki doctor` | `profile?` |
+| `saki_roadmap_list` | `saki roadmap list` | none |
+| `saki_runs` | `saki runs` | none |
+| `saki_prd_show` | `saki prd show` | `target` (roadmap id or `.md` path; a path resolving outside the repo cwd is refused before `cmdPrdShow` ever runs — an MCP tool's arguments can be steered by content already in the calling agent's context, unlike a human-typed CLI path) |
+
+Every tool wraps the exact same `cmd*` function the CLI itself calls, so the exit-code contract is
+translated once, never forked: a returned `ExitCode !== EXIT.OK` or a thrown `CliError` both map to
+`isError:true`, with the numeric + symbolic exit code folded into the tool result's content (MCP's boolean
+`isError` alone would collapse the CLI's six distinct codes into one bit). Requires the Go backend already
+running — same precondition as every other `saki` command; `saki mcp` does not auto-start it. Stdio only,
+no auth (matches the backend's loopback-only, local-single-operator trust model).
 
 Point your MCP client's config at the `saki` binary directly — the client spawns the process itself and
 owns its stdin/stdout, so `saki mcp` is never started by hand in a shell (backgrounding it with `&` from

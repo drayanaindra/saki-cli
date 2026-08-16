@@ -60,14 +60,17 @@ describe('saki mcp — saki_status tool', () => {
     expect(content[1].text).toBe('Exited with code 3 (UNREACHABLE)')
   })
 
-  it('tools/list contains exactly saki_status, with inputSchema and annotations', async () => {
+  it('tools/list carries saki_status, with inputSchema and annotations', async () => {
+    // The exact tool COUNT is slice 2's assertion (src/commands/mcp-slice2.test.ts, "tools/list has 5
+    // tools") — this only pins saki_status's own shape, so later slices adding tools don't force an
+    // edit here too.
     const client = routedClient({})
     const mcpClient = await connectedClient(client)
     const { tools } = await mcpClient.listTools()
-    expect(tools).toHaveLength(1)
-    expect(tools[0].name).toBe('saki_status')
-    expect(tools[0].inputSchema).toBeTruthy()
-    expect(tools[0].annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
+    const status = tools.find((t) => t.name === 'saki_status')
+    expect(status).toBeTruthy()
+    expect(status?.inputSchema).toBeTruthy()
+    expect(status?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
   })
 
   it('back-to-back calls are isolated — reachable then unreachable, no leaked state', async () => {

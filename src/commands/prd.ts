@@ -6,8 +6,10 @@ import type { Ctx } from '../ctx.js'
 import type { PrdResult, RoadmapResult } from '../types.js'
 
 // A PRD can be addressed two ways: by roadmap id (`E12` — resolved through the item's Child PRD)
-// or by an explicit .md path. Anything ending in .md is treated as a path.
-function looksLikePath(target: string): boolean {
+// or by an explicit .md path. Anything ending in .md is treated as a path. Exported so the MCP tool
+// layer (src/mcp/tools/prd-show.ts) can classify a `target` the same way, for its own cwd-containment
+// check, without duplicating (and risking drift from) this exact definition.
+export function looksLikePath(target: string): boolean {
   return /\.md$/i.test(target.trim())
 }
 
