@@ -1,6 +1,19 @@
 import { makeCtx, type Ctx } from '../ctx.js'
 import type { CapturedIO } from './result.js'
 
+// Shared by every register*Tool(server, makeToolCtx) function — one name instead of repeating the
+// Pick<Ctx, 'client' | 'cwd'> => ... signature per tool file.
+export type ToolCtxFactory = () => Pick<Ctx, 'client' | 'cwd'>
+
+// Every tool registered so far is read-only (slices 1-2) — the identical annotations literal was
+// copied into 5 files; naming it once means a 6th tool reuses it instead of adding a 6th copy.
+export const READ_ONLY_ANNOTATIONS = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const
+
 // Builds a FRESH {ctx, captured} pair for one tool invocation. Call this INSIDE every tool handler body,
 // never hoisted to module or registration scope — a hoisted pair would leak one call's output into the
 // next tool call's response (the exact regression slice 1's review caught once already).

@@ -151,11 +151,24 @@ describe('saki mcp — slice 2 read-only tools', () => {
     expect(relative.isError).toBe(true)
     const relativeContent = relative.content as Content
     expect(relativeContent[0].text).toContain('resolves outside the repo')
+    // the refusal carries an exit code like every other failure path (exitCodeToToolResult), not a
+    // bespoke isError:true with no code line
+    expect(relativeContent[0].text).toContain('Exited with code 2 (USAGE)')
 
     const absolute = await mcpClient.callTool({ name: 'saki_prd_show', arguments: { target: '/etc/some.md' } })
     expect(absolute.isError).toBe(true)
 
-    // cmdPrdShow must never have run — no /api/prd or /api/roadmap request for either rejected call
+    // a leading-space payload must not slip past the guard: resolveTargetPrdPath trims before
+    // resolving, so a guard checking the UNtrimmed string could resolve a different (safe-looking)
+    // path than the one cmdPrdShow actually reads — reviewer-caught regression
+    const spacePrefixed = await mcpClient.callTool({
+      name: 'saki_prd_show',
+      arguments: { target: ' ../outside.md' },
+    })
+    expect(spacePrefixed.isError).toBe(true)
+    expect((spacePrefixed.content as Content)[0].text).toContain('resolves outside the repo')
+
+    // cmdPrdShow must never have run — no /api/prd or /api/roadmap request for any rejected call
     expect(urls.some((u) => u.includes('/api/prd') || u.includes('/api/roadmap'))).toBe(false)
   })
 
