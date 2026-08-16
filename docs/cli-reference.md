@@ -152,8 +152,8 @@ saki screenshots                             # /qa screenshots + their urls
 
 ### `saki mcp` — the same journey commands as typed tools
 
-Starts a stdio MCP server for agent harnesses that prefer a tool call over a shell. Slices 1-3 register 8
-tools; slice 4 adds the branch/MR/PRD-lock tools (13 total — see `tasks/prd-mcp-surface-saki-mcp.md`):
+Starts a stdio MCP server for agent harnesses that prefer a tool call over a shell. Registers all 13 tools
+in the PRD's v1 scope — see `tasks/prd-mcp-surface-saki-mcp.md`:
 
 | Tool | Wraps | Args |
 |---|---|---|
@@ -165,6 +165,11 @@ tools; slice 4 adds the branch/MR/PRD-lock tools (13 total — see `tasks/prd-mc
 | `saki_run_start` | `saki run <verb>` | `verb`, `target?`, `profile?`, `engine?`, `heal?` (silently ignored for every verb but `wrap` — matches `cmdRunStart`'s own gate, not a CLI-parity `USAGE` rejection) — starts a run and returns immediately with a `runId`; no `--follow` (call `saki_run_tail` separately to block for the result). A `target` resolving outside the repo cwd is refused the same way `saki_prd_show`'s is, for every verb that takes one |
 | `saki_run_tail` | `saki run tail` | `runId` — blocks until the run reaches a terminal state, mirroring the CLI's own untimed behavior. Output is capped at 200 content blocks (head + the terminal verdict) to avoid returning an unbounded transcript into the calling agent's context |
 | `saki_run_stop` | `saki run stop` | `runId` |
+| `saki_branch` | `saki branch` | none |
+| `saki_branch_list` | `saki branch list` | none |
+| `saki_branch_switch` | `saki branch switch` | `branch`, `create?` — the branch name needs no extra MCP-layer validation beyond what the backend already enforces (a leading `-`, `..`, and refname-invalid characters are rejected server-side on the create path; the switch-to-existing path is separately guarded by a fixed `--` argv separator) |
+| `saki_mr_create` | `saki mr create` | none — the only tool here with `openWorldHint:true` (it pushes and opens a real merge request on a remote host via `glab`; every other tool talks only to the local backend) |
+| `saki_prd_lock` | `saki prd lock` | `target` (same shape and containment check as `saki_prd_show`'s) |
 
 Every tool wraps the exact same `cmd*` function the CLI itself calls, so the exit-code contract is
 translated once, never forked: a returned `ExitCode !== EXIT.OK` or a thrown `CliError` both map to

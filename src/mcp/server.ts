@@ -10,6 +10,11 @@ import { registerPrdShowTool } from './tools/prd-show.js'
 import { registerRunStartTool } from './tools/run-start.js'
 import { registerRunTailTool } from './tools/run-tail.js'
 import { registerRunStopTool } from './tools/run-stop.js'
+import { registerBranchTool } from './tools/branch.js'
+import { registerBranchListTool } from './tools/branch-list.js'
+import { registerBranchSwitchTool } from './tools/branch-switch.js'
+import { registerMrCreateTool } from './tools/mr-create.js'
+import { registerPrdLockTool } from './tools/prd-lock.js'
 
 // package.json sits outside tsconfig's rootDir ("src"), so a static import would fail tsc regardless of
 // resolveJsonModule — read it at runtime instead.
@@ -29,5 +34,10 @@ export function createSakiMcpServer(ctx: Ctx): McpServer {
   registerRunStartTool(server, makeToolCtx)
   registerRunTailTool(server, makeToolCtx)
   registerRunStopTool(server, makeToolCtx)
+  registerBranchTool(server, makeToolCtx)
+  registerBranchListTool(server, makeToolCtx)
+  registerBranchSwitchTool(server, makeToolCtx)
+  registerMrCreateTool(server, makeToolCtx)
+  registerPrdLockTool(server, makeToolCtx)
   return server
 }

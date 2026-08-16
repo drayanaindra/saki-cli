@@ -291,24 +291,25 @@ describe('saki mcp — slice 3 run lifecycle tools', () => {
     expect(secondContent.some((c) => c.text.includes('unknown run verb'))).toBe(false)
   })
 
-  it('mcp3: tools/list has 8 tools with correct annotations', async () => {
+  it('mcp3: tools/list carries all 8 slice 1-3 tools, correctly annotated', async () => {
+    // The exact tool COUNT is slice 4's assertion (src/commands/mcp-slice4.test.ts, "tools/list has 13
+    // tools") — this only pins that these 8 are present and correctly annotated, same reasoning as
+    // mcp.test.ts's and mcp-slice2.test.ts's narrowed assertions.
     const client = routedClient({})
     const mcpClient = await connectedClient(client)
     const { tools } = await mcpClient.listTools()
-    expect(tools).toHaveLength(8)
+    const names = [
+      'saki_status',
+      'saki_doctor',
+      'saki_roadmap_list',
+      'saki_runs',
+      'saki_prd_show',
+      'saki_run_start',
+      'saki_run_tail',
+      'saki_run_stop',
+    ]
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]))
-    expect(Object.keys(byName).sort()).toEqual(
-      [
-        'saki_status',
-        'saki_doctor',
-        'saki_roadmap_list',
-        'saki_runs',
-        'saki_prd_show',
-        'saki_run_start',
-        'saki_run_tail',
-        'saki_run_stop',
-      ].sort(),
-    )
+    for (const name of names) expect(byName[name]).toBeTruthy()
     expect(byName.saki_run_start?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
     expect(byName.saki_run_tail?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
     expect(byName.saki_run_stop?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
