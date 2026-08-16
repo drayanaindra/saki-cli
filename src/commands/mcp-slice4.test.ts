@@ -112,6 +112,25 @@ describe('saki mcp — slice 4 repo/git + PRD lock tools', () => {
     expect(JSON.parse((switched.content as Content)[0].text)).toEqual({ branch: 'feature/x', created: false })
   })
 
+  it('mcp4: branch_switch create:true threads through to the request', async () => {
+    // Reviewer finding (slice 4): `create` selects a materially different backend argv path
+    // (`git switch -c <branch>`, no `--` separator — relies on server-side ValidateBranchName instead)
+    // vs the switch-to-existing path (`git switch -- <branch>`). Only the false/omitted case was
+    // previously exercised through the MCP wrapper; this proves `create:true` actually reaches the
+    // request body, not just that the TS types compile.
+    const posted: { url: string; body: unknown }[] = []
+    const client = routedClient({ '/api/switch-branch': { body: { branch: 'feature/new' } } }, [], posted)
+    const mcpClient = await connectedClient(client)
+    const result = await mcpClient.callTool({
+      name: 'saki_branch_switch',
+      arguments: { branch: 'feature/new', create: true },
+    })
+    expect(result.isError).toBe(false)
+    expect(JSON.parse((result.content as Content)[0].text)).toEqual({ branch: 'feature/new', created: true })
+    const switchPost = posted.find((p) => p.url.includes('/api/switch-branch'))
+    expect(switchPost?.body).toMatchObject({ branch: 'feature/new', create: true })
+  })
+
   it('mcp4: mr_create happy', async () => {
     const client = routedClient({ '/api/create-mr': { body: { url: 'https://example.com/mr/1' } } })
     const mcpClient = await connectedClient(client)
@@ -124,7 +143,10 @@ describe('saki mcp — slice 4 repo/git + PRD lock tools', () => {
     // A bespoke STATEFUL stub (not the shared stateless routedClient) — proves the second call actually
     // reflects the first's effect, not two independently-passing canned bodies (QA-flagged gap, slice 4
     // plan review). PrdResult has no `locked` field, so the lock's visible effect is the PRD's own
-    // content gaining a `<!-- prd-locked -->`-shaped marker, mirroring this project's real workflow.
+    // content gaining a `<!-- prd-locked -->`-shaped marker. This proves the MCP-layer property that
+    // matters here — no per-call state cached across two tool calls, the second call genuinely sees the
+    // first's effect — not a byte-exact reproduction of the real marker's position/text (ApplyLock
+    // actually prepends it at line 1 with a fuller `@approver · date · ui:...` shape, backend/domain/lock.go).
     let locked = false
     const impl = (async (url: string | URL) => {
       const u = String(url)
@@ -179,6 +201,25 @@ describe('saki mcp — slice 4 repo/git + PRD lock tools', () => {
     expect((absolute.content as Content).some((c) => c.text.includes('resolves outside the repo'))).toBe(true)
 
     // cmdPrdLock must never have run — no /api/prd, /api/roadmap, or /api/lock-prd request
+    expect(urls.some((u) => u.includes('/api/prd') || u.includes('/api/roadmap') || u.includes('/api/lock-prd'))).toBe(
+      false,
+    )
+  })
+
+  it('mcp4: prd_lock leading-space target is not a bypass', async () => {
+    // Regression test for the exact bug class a slice-2 reviewer caught once already (commit 8a7431c):
+    // a guard checking an UNtrimmed string while the wrapped command trims independently can let a
+    // leading-space payload slip through. prd-lock.ts trims once and reuses that same value for both the
+    // guard and cmdPrdLock — this proves that discipline holds here too, not just in prd-show.ts.
+    const urls: string[] = []
+    const client = routedClient({ '/api/prd': { body: { found: true, path: '/repo/x.md' } } }, urls)
+    const mcpClient = await connectedClient(client)
+    const result = await mcpClient.callTool({
+      name: 'saki_prd_lock',
+      arguments: { target: ' ../../../etc/passwd.md' },
+    })
+    expect(result.isError).toBe(true)
+    expect((result.content as Content).some((c) => c.text.includes('resolves outside the repo'))).toBe(true)
     expect(urls.some((u) => u.includes('/api/prd') || u.includes('/api/roadmap') || u.includes('/api/lock-prd'))).toBe(
       false,
     )

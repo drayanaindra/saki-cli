@@ -14,6 +14,17 @@ export const READ_ONLY_ANNOTATIONS = {
   openWorldHint: false,
 } as const
 
+// State-changing AND not repeatable-with-the-same-effect: starting a run, stopping a run, and switching
+// branches (run-start.ts, run-stop.ts, branch-switch.ts) share this exact shape — extracted at the third
+// copy (reviewer finding, slice 4), same reasoning as READ_ONLY_ANNOTATIONS above. Each tool keeps its
+// own comment explaining WHY it's destructive — this only names the shared shape.
+export const DESTRUCTIVE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: false,
+} as const
+
 // Builds a FRESH {ctx, captured} pair for one tool invocation. Call this INSIDE every tool handler body,
 // never hoisted to module or registration scope — a hoisted pair would leak one call's output into the
 // next tool call's response (the exact regression slice 1's review caught once already).

@@ -5,7 +5,7 @@ import { looksLikePath } from '../../commands/prd.js'
 import { EXIT, fail } from '../../exit.js'
 import { pathEscapesCwd } from '../path-guard.js'
 import { exitCodeToToolResult } from '../result.js'
-import { buildToolCtx, type ToolCtxFactory } from '../tool-ctx.js'
+import { buildToolCtx, DESTRUCTIVE_ANNOTATIONS, type ToolCtxFactory } from '../tool-ctx.js'
 
 // `saki_run_start` is the first STATE-CHANGING tool this MCP surface exposes — it spawns a new,
 // unsandboxed coding-agent process (CLAUDE.md rule 3) that can edit, delete, commit, and (for `wrap`)
@@ -14,12 +14,6 @@ import { buildToolCtx, type ToolCtxFactory } from '../tool-ctx.js'
 // policy, especially next to saki_run_stop, which merely kills a process). `--follow` is deliberately
 // NOT exposed: the intended MCP flow is always two calls (this tool, then saki_run_tail), never one call
 // blocking for an entire build's duration.
-const RUN_START_ANNOTATIONS = {
-  readOnlyHint: false,
-  destructiveHint: true,
-  idempotentHint: false,
-  openWorldHint: false,
-} as const
 
 export function registerRunStartTool(server: McpServer, makeToolCtx: ToolCtxFactory): void {
   server.registerTool(
@@ -40,7 +34,7 @@ export function registerRunStartTool(server: McpServer, makeToolCtx: ToolCtxFact
         engine: z.string().optional(),
         heal: z.boolean().optional(),
       },
-      annotations: RUN_START_ANNOTATIONS,
+      annotations: DESTRUCTIVE_ANNOTATIONS,
     },
     async (args: { verb: string; target?: string; profile?: string; engine?: string; heal?: boolean }) => {
       const base = makeToolCtx()

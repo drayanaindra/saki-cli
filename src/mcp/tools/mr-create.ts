@@ -3,9 +3,11 @@ import { cmdMrCreate } from '../../commands/repo.js'
 import { exitCodeToToolResult } from '../result.js'
 import { buildToolCtx, type ToolCtxFactory } from '../tool-ctx.js'
 
-// The only tool in this MCP surface with openWorldHint:true — every other tool talks only to the local,
-// loopback-only backend (closed world); this one pushes the branch and opens a REAL merge request on a
-// remote host via glab, an externally-visible side effect the rest of the annotation set doesn't have.
+// The only tool in this MCP surface with openWorldHint:true. Every other tool's OWN network call stays
+// within the local, loopback-only backend (closed world) — this one's does not: it pushes the branch and
+// opens a REAL merge request on a remote host via glab. (saki_run_start's SPAWNED agent can separately
+// reach a remote model API, but that is a downstream effect of the process it starts, not a network call
+// this tool itself makes — the same distinction destructiveHint already draws for that tool.)
 const MR_CREATE_ANNOTATIONS = {
   readOnlyHint: false,
   destructiveHint: false,

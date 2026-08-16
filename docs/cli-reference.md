@@ -168,7 +168,7 @@ in the PRD's v1 scope — see `tasks/prd-mcp-surface-saki-mcp.md`:
 | `saki_branch` | `saki branch` | none |
 | `saki_branch_list` | `saki branch list` | none |
 | `saki_branch_switch` | `saki branch switch` | `branch`, `create?` — the branch name needs no extra MCP-layer validation beyond what the backend already enforces (a leading `-`, `..`, and refname-invalid characters are rejected server-side on the create path; the switch-to-existing path is separately guarded by a fixed `--` argv separator) |
-| `saki_mr_create` | `saki mr create` | none — the only tool here with `openWorldHint:true` (it pushes and opens a real merge request on a remote host via `glab`; every other tool talks only to the local backend) |
+| `saki_mr_create` | `saki mr create` | none — the only tool here with `openWorldHint:true` (its own network call reaches a remote host via `glab` to push and open a real merge request; every other tool's own call stays within the local backend) |
 | `saki_prd_lock` | `saki prd lock` | `target` (same shape and containment check as `saki_prd_show`'s) |
 
 Every tool wraps the exact same `cmd*` function the CLI itself calls, so the exit-code contract is
