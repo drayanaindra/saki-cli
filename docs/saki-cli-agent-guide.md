@@ -523,7 +523,8 @@ run. Check `saki runs` first.
 
 1. **`saki artifacts` always exits `6`.** That route reads a browser session directly, which
    `DEV_MODE` does not provide. This is deliberate — the guard prevents cross-user artifact leaks
-   and was not weakened. Use the web UI for artifacts.
+   and was not weakened. Use the web UI for artifacts. To exercise it without the studio, run
+   `node scripts/stub-studio.mjs` and point `SAKI_STUDIO_URL` at it.
 2. **Loopback only.** `SAKI_STUDIO_URL` must be `localhost` / `127.0.0.1` / `::1`; the studio
    rejects other hosts with a cross-origin error.
 3. **`saki workitems`** prints raw JSON per item even in human mode — use `--json | jq`.

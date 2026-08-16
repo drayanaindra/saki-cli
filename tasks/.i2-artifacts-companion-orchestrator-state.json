@@ -1,0 +1,16 @@
+{
+  "task": "i2-artifacts-companion-orchestrator",
+  "plan": "/Users/indrayana/Project/saki-cli/tasks/i2-artifacts-companion-orchestrator-plan.md",
+  "branch": "main",
+  "item": "I2",
+  "updated": "2026-08-16",
+  "steps": {
+    "rplan": {
+      "status": "done",
+      "artifact": "/Users/indrayana/Project/saki-cli/tasks/i2-artifacts-companion-orchestrator-plan.md"
+    },
+    "approved": {
+      "status": "in-progress"
+    }
+  }
+}

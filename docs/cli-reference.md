@@ -28,7 +28,7 @@ server (`:8787`) is needed.
 | Variable | Default | Serves |
 |---|---|---|
 | `SAKI_BACKEND_URL` | `http://127.0.0.1:8788` | Go (`backend/`) — **everything the CLI needs** |
-| `SAKI_STUDIO_URL` | *(unset — no Express)* | **Opt-in.** Express (`apps/server`), when you are running the full pipeline-studio dev studio. Adds exactly two things: `saki artifacts`, and the `devMode`/`auth` lines in `saki status`. |
+| `SAKI_STUDIO_URL` | *(unset — no Express)* | **Opt-in.** Express (`apps/server`), when you are running the full pipeline-studio dev studio. Adds exactly two things: `saki artifacts`, and the `devMode`/`auth` lines in `saki status`. `scripts/stub-studio.mjs` serves both locally when you have no studio. |
 
 ```bash
 npm run dev:backend                           # that's all the CLI needs
@@ -270,7 +270,8 @@ $ saki run build tasks/prd-x.md --json      # retry
 the auth middleware, so `DEV_MODE=1` does **not** grant access — verified against a live studio. The
 guard is an IDOR protection (its sibling route returns 404 instead of 403 specifically to avoid
 leaking artifact existence across users), so the CLI **explains** the 401 rather than weakening the
-server. View artifacts in the studio UI.
+server. View artifacts in the studio UI. To exercise it without the studio, run
+`node scripts/stub-studio.mjs` and point `SAKI_STUDIO_URL` at it.
 
 **2. Hosted / multi-tenant studios are out of scope.** No `saki login`, no device-code flow, no
 token storage. Local only.

@@ -100,7 +100,7 @@ Honest list of what the packaging still lacks:
 - No published npm package — build from source for now
 - No daemon lifecycle (`saki` does not yet auto-start the backend) and no unix-socket transport
 - No MCP surface (`saki mcp`) for agents that prefer tools over a shell
-- `saki artifacts` needs a companion orchestrator that is not part of this repo
+- `saki artifacts` is session-gated via the studio; the local stub `scripts/stub-studio.mjs` serves the route
 
 ## License
 

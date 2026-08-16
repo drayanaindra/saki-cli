@@ -50,6 +50,6 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 **Child plan:** —
 
 ### I2 · `saki artifacts` companion orchestrator
-**Type:** Improvement · **Track:** Plan · **Status:** Blocked · **Owner:** unassigned · **Updated:** 2026-08-15
+**Type:** Improvement · **Track:** Plan · **Status:** In-progress · **Owner:** unassigned · **Updated:** 2026-08-16
 **What:** `saki artifacts` depends on a companion orchestrator that is not part of this repo, so the command cannot be exercised end-to-end here. Blocked until that dependency is identified and either vendored, stubbed behind a port, or documented as an external requirement.
-**Child plan:** —
+**Child plan:** tasks/i2-artifacts-companion-orchestrator-plan.md
