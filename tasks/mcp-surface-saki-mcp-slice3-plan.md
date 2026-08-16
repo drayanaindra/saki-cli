@@ -340,7 +340,8 @@ it.)*
 - [x] `saki_run_stop` happy path passes, a follow-up `saki_runs` shows it stopped (test: `mcp3: run_stop happy then runs shows stopped`) → 3.5
 - [x] `saki_run_tail` empty-runId (thrown USAGE) path passes (test: `mcp3: run_tail empty runId`)
 - [x] `saki_run_stop` unknown-run (thrown NOT_FOUND) path passes (test: `mcp3: run_stop unknown run`)
-- [x] `saki_run_start` escaping build-target rejection passes, and `cmdRunStart` is proven never called (test: `mcp3: run_start build target escape rejected`) — the slice's one real security fix
+- [x] `saki_run_start` escaping-target rejection passes for `build` AND a non-`build` verb, `cmdRunStart` proven never called (test: `mcp3: run_start target escape rejected for every target-taking verb, not just build`) — broadened post-review (see Annotation Space)
+- [x] `saki_run_tail` caps unbounded output at 200 content blocks, preserving the terminal verdict (test: `mcp3: run_tail caps unbounded output, keeping head + terminal tail`) — added post-review
 - [x] `saki_run_start` empty-target-for-required-verb (thrown USAGE) path passes (test: `mcp3: run_start empty target for build`)
 - [x] `saki_run_start` target-given-to-no-target-verb (thrown USAGE) path passes (test: `mcp3: run_start target given to reviewer`)
 - [x] Cross-tool call isolation passes (test: `mcp3: cross-tool calls are isolated`)
@@ -348,8 +349,10 @@ it.)*
 - [x] `npm run typecheck` passes
 - [x] `npm test` — all green
 - [x] `npm run test:coverage` — new files ≥ 80%
-- [ ] Dedicated security audit (mandatory — process spawning + caller-supplied strings) is clean or its
-      findings are fixed before this slice is marked done
+- [x] Dedicated security audit (mandatory — process spawning + caller-supplied strings) is clean or its
+      findings are fixed before this slice is marked done — VERDICT: CLEAN, one LOW finding (symlink
+      bypass of the lexical containment check; requires pre-existing local write access to the repo, a
+      stronger precondition than this PRD's LLM-steered-argument threat model — tracked, not fixed)
 
 ---
 
@@ -371,8 +374,31 @@ it.)*
 > path, an under-specified happy-path stub chain) all folded into Step 6. Two accepted, documented
 > non-fixes: `profile`'s reach into a spawned process's config (mirrors an existing CLI capability, not a
 > widening) and the absence of any concurrency cap on run-starting (pre-existing, systemic, out of scope
-> for a zero-new-backend-surface slice). Blocking: 0 → READY.
+> for a zero-new-backend-surface slice).
+>
+> Reviewed AFTER implementation by a fresh-context reviewer + a dedicated mandatory security audit
+> (parallel passes), 2026-08-16, against commit 314d638. Reviewer: REQUEST CHANGES, 1 HIGH — the
+> containment guard from Step 2 was gated on `verb === 'build'` only, inconsistent with its own stated
+> rationale ("becomes part of the prompt sent to a NEW spawned process," true for every target-taking
+> verb, not just `build`); the reviewer drove a real in-memory probe confirming 7 other verbs bypassed it.
+> **Fixed: the guard now runs for every target-taking verb**, and the check itself was extracted to a
+> shared `src/mcp/path-guard.ts` (the reviewer separately flagged its duplication across `prd-show.ts` and
+> `run-start.ts` as a drift risk — the exact class of bug commit 8a7431c already fixed once). Also fixed
+> from the same pass: `saki_run_start`'s `destructiveHint` flipped `false`→`true` (it spawns a process that
+> can destructively edit/commit/push, undersold as non-destructive next to `saki_run_stop`); `saki_run_tail`
+> now caps its content-block output at 200 blocks (head + terminal verdict) — an MCP client holds a tool
+> result's entire content in its own context, unlike a scrolling terminal, so an unbounded per-line block
+> count was a real practical risk for a long build; the test's `findStatusBlock` now scans from the end,
+> not the start, so a streamed line that itself happens to be JSON with a `status` field can't shadow the
+> real terminal verdict; the happy-path test now asserts the POST body's `prompt`/`meta.laneKey` actually
+> carry the resolved absolute PRD path, not just the response. Security audit (independent, parallel):
+> VERDICT CLEAN — confirmed no command injection (prompt reaches the child exclusively via env vars, never
+> shell-interpolated), no exfiltration (`cmdRunStart` discards PRD `.content`, returns only `.path`), no
+> new authz gap, `runId` purely an opaque lookup key; one LOW finding (symlink-based bypass of the lexical
+> containment check, requiring pre-existing local write access — tracked in `path-guard.ts`'s own comment,
+> not fixed, given the precondition is stronger than this PRD's threat model). All 347 tests green after
+> fixes, every touched/new file at 100% coverage. Blocking: 0 → READY.
 
 ---
-Status: [x] Draft  [x] Annotated  [x] Approved (domain-expert pass clean — 2 blockers fixed pre-implementation)  [ ] In Progress  [ ] Complete
+Status: [x] Draft  [x] Annotated  [x] Approved (domain-expert pass clean — 2 blockers fixed pre-implementation)  [x] In Progress  [x] Complete (reviewer + security audit clean post-fix)
 Readiness Gate: [x] Evidence Ledger present  [x] Blocking Set empty  [x] Unknowns <= 2

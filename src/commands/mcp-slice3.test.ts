@@ -16,10 +16,14 @@ type Content = { type: string; text: string }[]
 function routedClient(
   routes: Record<string, { status?: number; body?: unknown; stream?: string[]; down?: boolean }>,
   urls: string[] = [],
+  posted: { url: string; body: unknown }[] = [],
 ) {
-  const impl = (async (url: string | URL) => {
+  const impl = (async (url: string | URL, init?: RequestInit) => {
     const u = String(url)
     urls.push(u)
+    if (init?.method === 'POST' && typeof init.body === 'string') {
+      posted.push({ url: u, body: JSON.parse(init.body) })
+    }
     const key = Object.keys(routes).find((k) => u.includes(k))
     const r = key ? routes[key] : { status: 404, body: { error: 'no stub' } }
     if (r.down) throw new TypeError('fetch failed')
@@ -62,11 +66,13 @@ const endFrame = (status: string, exitCode: number | null) =>
 
 // Finds the content block whose text parses as JSON carrying a `status` field — NOT the last block: on
 // a non-OK exit, exitCodeToToolResult appends a synthesized "Exited with code N" text block AFTER the
-// terminal JSON (result.ts:36-38), so the JSON is second-to-last on a failed run, not last.
+// terminal JSON (result.ts:36-38), so the JSON is second-to-last on a failed run, not last. Scans from
+// the END, not the start — a streamed agent event line can itself be JSON carrying a `status` key (e.g.
+// `{"status":"ok"}` mid-run), which would shadow the real terminal verdict on a front-to-back scan.
 function findStatusBlock(content: Content): { status: string; exitCode: number | null } | undefined {
-  for (const c of content) {
+  for (let i = content.length - 1; i >= 0; i--) {
     try {
-      const parsed = JSON.parse(c.text)
+      const parsed = JSON.parse(content[i].text)
       if (parsed && typeof parsed === 'object' && 'status' in parsed) return parsed
     } catch {
       // not JSON — keep scanning
@@ -101,12 +107,20 @@ const BUILD_STUB_CHAIN = {
 
 describe('saki mcp — slice 3 run lifecycle tools', () => {
   it('mcp3: run_start happy', async () => {
-    const client = routedClient(BUILD_STUB_CHAIN)
+    const posted: { url: string; body: unknown }[] = []
+    const client = routedClient(BUILD_STUB_CHAIN, [], posted)
     const mcpClient = await connectedClient(client)
     const result = await mcpClient.callTool({ name: 'saki_run_start', arguments: { verb: 'build', target: 'F5' } })
     expect(result.isError).toBe(false)
     const content = result.content as Content
     expect(JSON.parse(content[0].text)).toEqual({ runId: 'r1', deduped: false })
+
+    // the roadmap id must resolve to the real absolute PRD path — the dedupe-lane identity
+    // (run.ts:131-144) — not the raw "F5" argument, before it ever reaches the spawn prompt
+    const runPost = posted.find((p) => p.url.includes('/api/run') && !p.url.includes('/api/run/'))
+    const body = runPost?.body as { prompt?: string; meta?: { laneKey?: string } }
+    expect(body?.prompt).toBe('/saki-builder:build /repo/tasks/prd-f5.md')
+    expect(body?.meta?.laneKey).toBe('/repo/tasks/prd-f5.md')
   })
 
   it('mcp3: run_start unknown verb', async () => {
@@ -162,6 +176,21 @@ describe('saki mcp — slice 3 run lifecycle tools', () => {
     expect(statusBlock?.status).toBe('done')
   })
 
+  it('mcp3: run_tail caps unbounded output, keeping head + terminal tail', async () => {
+    const LINE_COUNT = 250
+    const frames = [...Array(LINE_COUNT)].map((_, i) => evFrame(`line ${i}`))
+    const client = routedClient({ '/events/': { stream: [...frames, endFrame('done', 0)] } })
+    const mcpClient = await connectedClient(client)
+    const result = await mcpClient.callTool({ name: 'saki_run_tail', arguments: { runId: 'r1' } })
+    expect(result.isError).toBe(false)
+    const content = result.content as Content
+    expect(content.length).toBe(200) // MAX_CONTENT_BLOCKS
+    expect(content[0].text).toBe('line 0') // head preserved
+    expect(content.some((c) => c.text.includes('lines truncated'))).toBe(true)
+    const statusBlock = findStatusBlock(content)
+    expect(statusBlock?.status).toBe('done') // terminal verdict survives truncation
+  })
+
   it('mcp3: run_stop happy then runs shows stopped', async () => {
     const client = routedClient({
       '/api/run/': { body: {} },
@@ -197,7 +226,11 @@ describe('saki mcp — slice 3 run lifecycle tools', () => {
     expect(content.some((c) => c.text.includes('Exited with code 4 (NOT_FOUND)'))).toBe(true)
   })
 
-  it('mcp3: run_start build target escape rejected', async () => {
+  it('mcp3: run_start target escape rejected for every target-taking verb, not just build', async () => {
+    // Reviewer finding (slice 3): the original guard was gated on verb==='build' only, inconsistent
+    // with its own rationale — a .md-shaped escaping target reaches the same spawned-process prompt for
+    // every verb, not just build's extra fetchPrd step. Covers both build (which additionally resolves
+    // via the roadmap/PRD stub chain) and a non-build verb (pickup, which passes target through raw).
     const urls: string[] = []
     const client = routedClient(BUILD_STUB_CHAIN, urls)
     const mcpClient = await connectedClient(client)
@@ -215,7 +248,14 @@ describe('saki mcp — slice 3 run lifecycle tools', () => {
     expect(absolute.isError).toBe(true)
     expect((absolute.content as Content).some((c) => c.text.includes('resolves outside the repo'))).toBe(true)
 
-    // cmdRunStart must never have run — no /api/prd or /api/run request for either rejected call
+    const nonBuild = await mcpClient.callTool({
+      name: 'saki_run_start',
+      arguments: { verb: 'pickup', target: '../../../etc/passwd.md' },
+    })
+    expect(nonBuild.isError).toBe(true)
+    expect((nonBuild.content as Content).some((c) => c.text.includes('resolves outside the repo'))).toBe(true)
+
+    // cmdRunStart must never have run — no /api/prd or /api/run request for any rejected call
     expect(urls.some((u) => u.includes('/api/prd') || u.includes('/api/run'))).toBe(false)
   })
 
@@ -269,7 +309,7 @@ describe('saki mcp — slice 3 run lifecycle tools', () => {
         'saki_run_stop',
       ].sort(),
     )
-    expect(byName.saki_run_start?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false })
+    expect(byName.saki_run_start?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
     expect(byName.saki_run_tail?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
     expect(byName.saki_run_stop?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
   })

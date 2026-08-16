@@ -162,8 +162,8 @@ tools; slice 4 adds the branch/MR/PRD-lock tools (13 total — see `tasks/prd-mc
 | `saki_roadmap_list` | `saki roadmap list` | none |
 | `saki_runs` | `saki runs` | none |
 | `saki_prd_show` | `saki prd show` | `target` (roadmap id or `.md` path; a path resolving outside the repo cwd is refused before `cmdPrdShow` ever runs — an MCP tool's arguments can be steered by content already in the calling agent's context, unlike a human-typed CLI path) |
-| `saki_run_start` | `saki run <verb>` | `verb`, `target?`, `profile?`, `engine?`, `heal?` — starts a run and returns immediately with a `runId`; no `--follow` (call `saki_run_tail` separately to block for the result). For `verb:"build"`, a `target` resolving outside the repo cwd is refused the same way `saki_prd_show`'s is |
-| `saki_run_tail` | `saki run tail` | `runId` — blocks until the run reaches a terminal state, mirroring the CLI's own untimed behavior |
+| `saki_run_start` | `saki run <verb>` | `verb`, `target?`, `profile?`, `engine?`, `heal?` (silently ignored for every verb but `wrap` — matches `cmdRunStart`'s own gate, not a CLI-parity `USAGE` rejection) — starts a run and returns immediately with a `runId`; no `--follow` (call `saki_run_tail` separately to block for the result). A `target` resolving outside the repo cwd is refused the same way `saki_prd_show`'s is, for every verb that takes one |
+| `saki_run_tail` | `saki run tail` | `runId` — blocks until the run reaches a terminal state, mirroring the CLI's own untimed behavior. Output is capped at 200 content blocks (head + the terminal verdict) to avoid returning an unbounded transcript into the calling agent's context |
 | `saki_run_stop` | `saki run stop` | `runId` |
 
 Every tool wraps the exact same `cmd*` function the CLI itself calls, so the exit-code contract is
