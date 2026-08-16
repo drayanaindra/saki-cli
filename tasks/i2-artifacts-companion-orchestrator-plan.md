@@ -243,7 +243,7 @@ None — no DB schema change (`None — no schema change`).
       `yes (stub-studio)`, `devMode on`, `runs allowed`
 - [x] `grep -rn "stub-studio" docs/cli-reference.md docs/saki-cli-agent-guide.md README.md` finds the
       stub named in all three (docs updated)
-- [ ] `/qa` flips I2 in `tasks/roadmap.md` to **Shipped** (all of the above pass)
+- [x] `/qa` flips I2 in `tasks/roadmap.md` to **Shipped** (all of the above pass)
 
 ---
 
@@ -254,5 +254,5 @@ None — no DB schema change (`None — no schema change`).
 
 ---
 
-Status: [ ] Draft  [ ] Annotated  [x] Approved  [x] In Progress  [ ] Complete
+Status: [ ] Draft  [ ] Annotated  [x] Approved  [ ] In Progress  [x] Complete
 Readiness Gate: [x] Evidence Ledger present and every blocking item cited  [x] Blocking Set empty  [x] Unknowns <= 2

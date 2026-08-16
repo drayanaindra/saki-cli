@@ -10,7 +10,17 @@
       "artifact": "/Users/indrayana/Project/saki-cli/tasks/i2-artifacts-companion-orchestrator-plan.md"
     },
     "approved": {
-      "status": "in-progress"
+      "status": "done",
+      "lastCommit": "11aec45"
+    },
+    "qa": {
+      "status": "done"
+    },
+    "reviewer": {
+      "status": "done"
+    },
+    "security": {
+      "status": "n/a"
     }
   }
 }

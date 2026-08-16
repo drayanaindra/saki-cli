@@ -38,6 +38,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
+    "stub:studio": "node scripts/stub-studio.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",

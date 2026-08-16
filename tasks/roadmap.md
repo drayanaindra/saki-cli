@@ -51,5 +51,5 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 
 ### I2 · `saki artifacts` companion orchestrator
 **Type:** Improvement · **Track:** Plan · **Status:** In-progress · **Owner:** unassigned · **Updated:** 2026-08-16
-**What:** `saki artifacts` depends on a companion orchestrator that is not part of this repo, so the command cannot be exercised end-to-end here. Blocked until that dependency is identified and either vendored, stubbed behind a port, or documented as an external requirement.
+**What:** `saki artifacts` depends on a companion orchestrator that is not part of this repo. A dependency-free loopback stub now serves the artifact, health, and session routes so the command can be exercised end-to-end here without weakening the real studio's session gate.
 **Child plan:** tasks/i2-artifacts-companion-orchestrator-plan.md
