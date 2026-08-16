@@ -20,9 +20,9 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 **Child PRD:** prd-saki-doctor-verify-engine-provisioning-before-a-run.md
 
 ### F3 · MCP surface (`saki mcp`)
-**Type:** Feature · **Track:** PRD · **Status:** Planned · **Owner:** unassigned · **Updated:** 2026-08-15
+**Type:** Feature · **Track:** PRD · **Status:** Shipped · **Owner:** unassigned · **Updated:** 2026-08-16
 **Goal:** Expose the journey commands as MCP tools for agents that prefer a tool call to a shell, without forking the exit-code contract that shell callers depend on.
-**Child PRD:** —
+**Child PRD:** prd-mcp-surface-saki-mcp.md
 
 ### F4 · `saki doctor` — claude coverage
 **Type:** Feature · **Track:** PRD · **Status:** Planned · **Owner:** unassigned · **Updated:** 2026-08-15
