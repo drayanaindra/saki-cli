@@ -50,6 +50,40 @@ func TestEngineProvisionerMissingBinaryWritesNothing(t *testing.T) {
 	}
 }
 
+// Regression, found by the real-binary e2e and by nothing else: `codex plugin marketplace add`
+// FAILS when CODEX_HOME names a directory that does not exist ("could not create PATH aliases"), so
+// a fresh --profile — the entire point of the feature — could never be provisioned. Every fake
+// `codex` exits 0 whether or not the directory is there, which is precisely why the standing rule
+// says a fake binary cannot prove an engine invocation.
+func TestEngineProvisionerCreatesTheEngineHomeBeforeInvokingTheInstaller(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "record")
+	t.Setenv("SAKI_TEST_RECORD", out)
+	// The fake fails exactly the way the real codex does when its home is missing.
+	writeFakeCodex(t, `if [ ! -d "$CODEX_HOME" ]; then echo "could not create PATH aliases" >&2; exit 1; fi
+printf 'home-existed\n' >> "$SAKI_TEST_RECORD"
+exit 0
+`)
+	profile := filepath.Join(t.TempDir(), "fresh") // deliberately NOT created
+	home := filepath.Join(profile, "codex")
+
+	if _, err := (EngineProvisioner{}).Provision(usecase.ProvisionRequest{
+		Cwd: t.TempDir(), Engine: domain.EngineCodex, Profile: &profile,
+	}); err != nil {
+		t.Fatalf("provision failed on a fresh profile: %v", err)
+	}
+
+	if info, statErr := os.Stat(home); statErr != nil || !info.IsDir() {
+		t.Fatalf("%s was not created before the installer ran: %v", home, statErr)
+	}
+	recorded, readErr := os.ReadFile(out)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if n := strings.Count(string(recorded), "home-existed"); n != len(usecase.CodexProvisionArgv) {
+		t.Fatalf("%d of %d commands saw an existing home", n, len(usecase.CodexProvisionArgv))
+	}
+}
+
 // 🔒 BR4 + the fixed-argv rule. Asserts the child sees the EXACT argv from usecase's single engine
 // mapping, that its EFFECTIVE CODEX_HOME is the one CodexSkillsProof will read, and that the other
 // engines' namespaces were shed. The foreign vars are PLANTED first — an absence assertion on a clean

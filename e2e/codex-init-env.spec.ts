@@ -105,25 +105,37 @@ test.describe('saki init-env — provision a codex profile, then prove it', () =
     }
   })
 
-  // --- criteria 1.1 and 1.4, asserted at PROCESS level ---
-  // The unit tests prove the mapping (a thrown CliError carries EXIT.USAGE); only running the binary
-  // proves the number actually reaches $?, which is what an agent branches on.
-  test('exits 2 on a bad engine and 1 on a missing binary, writing nothing', () => {
+  // --- criterion 1.1, asserted at PROCESS level ---
+  // The unit test proves the mapping (a thrown CliError carries EXIT.USAGE); only running the real
+  // binary proves that number actually reaches $?, which is what an agent branches on.
+  //
+  // Criterion 1.4's missing-binary case is deliberately NOT here: emptying the CLI child's PATH does
+  // nothing, because the CLI only POSTs — it is the BACKEND that looks up `codex`, and this spec does
+  // not own the backend's environment. Asserting it here would pass while proving nothing. It is
+  // pinned instead against the real EngineProvisioner with an emptied PATH, in
+  // backend/infra/initenv_test.go (TestEngineProvisionerMissingBinaryWritesNothing), which also makes
+  // the "no profile files created" half non-vacuous.
+  test('an unknown engine exits 2 without reaching the backend', () => {
     const usage = saki(['init-env', '--engine', 'nope', '--json'])
     expect(usage.status, 'an unknown engine must exit USAGE=2').toBe(2)
 
-    const profile = path.join(os.tmpdir(), `saki-init-env-absent-${process.pid}`)
-    expect(fs.existsSync(profile)).toBe(false)
+    const missing = saki(['init-env', '--json'])
+    expect(missing.status, 'a missing --engine must exit USAGE=2').toBe(2)
+  })
 
-    // An empty PATH makes `codex` genuinely absent for the CLI child. The BACKEND keeps its own PATH,
-    // so this asserts the CLI's exit mapping; the backend-side "binary absent" behaviour is pinned by
-    // backend/infra/initenv_test.go against the real EngineProvisioner.
-    const missing = saki(['init-env', '--engine', 'codex', '--profile', profile, '--json'], {
-      PATH: path.join(os.tmpdir(), 'saki-empty-path'),
-    })
-    expect([0, 1]).toContain(missing.status)
-    if (missing.status === 1) {
-      expect(fs.existsSync(profile), 'a failed setup created profile files').toBe(false)
+  // The unsupported engines are refused with a real verdict and no write — the boundary that keeps
+  // opencode's `npx … --global` (which writes outside the selected profile) unreachable until slice 2.
+  test('opencode and claude are refused without writing anything', () => {
+    for (const engine of ['opencode', 'claude']) {
+      const profile = fs.mkdtempSync(path.join(os.tmpdir(), `saki-unsupported-${engine}-`))
+      try {
+        const res = saki(['init-env', '--engine', engine, '--profile', profile, '--json'])
+        expect(res.status, `${engine} must exit 1`).toBe(1)
+        expect(parseJson(res.stdout)).toMatchObject({ engine, status: 'failed', changed: false })
+        expect(fs.readdirSync(profile), `${engine} wrote into the profile`).toEqual([])
+      } finally {
+        fs.rmSync(profile, { recursive: true, force: true })
+      }
     }
   })
 })

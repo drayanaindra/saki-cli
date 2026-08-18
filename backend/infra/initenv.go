@@ -38,6 +38,15 @@ func (EngineProvisioner) Provision(req usecase.ProvisionRequest) (bool, error) {
 	if !ok {
 		return false, usecase.ErrInitEnvUnsupported
 	}
+	// The engine home must EXIST before its installer runs. `codex plugin marketplace add` refuses to
+	// create PATH aliases when CODEX_HOME points at a missing directory and fails the command — so a
+	// fresh `--profile` (the whole point of this feature) could never be provisioned. Found only by
+	// the real-binary e2e; every fake exits 0 regardless of whether the directory is there.
+	// This is still inside the selected engine's own namespace (BR3) and runs AFTER the binary check,
+	// so criterion 1.4's "no profile files are created" is unaffected.
+	if err := ensureEngineHome(req.Engine, req.Profile); err != nil {
+		return false, err
+	}
 	before := profileFingerprint(req.Engine, req.Profile)
 	env := provisionEnv(req.Engine, req.Profile)
 	// Every command runs even after an earlier one fails, and the FIRST error is kept: a repeat run's
@@ -51,6 +60,20 @@ func (EngineProvisioner) Provision(req usecase.ProvisionRequest) (bool, error) {
 	}
 	after := profileFingerprint(req.Engine, req.Profile)
 	return before != after, firstErr
+}
+
+// ensureEngineHome creates the child-visible home the installer writes into and the proof then reads
+// — resolved by the SAME helper both of those use, so the directory created is never a third path.
+// 0700 because a profile can hold the engine's credentials.
+func ensureEngineHome(engine domain.RunEngine, profile *string) error {
+	if engine != domain.EngineCodex {
+		return nil
+	}
+	home := codexHomePath(profile)
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return fmt.Errorf("cannot create the codex home %s: %w", home, err)
+	}
+	return nil
 }
 
 // provisionArgv resolves the engine's fixed command list. Codex-only in slice 1; usecase refuses the
