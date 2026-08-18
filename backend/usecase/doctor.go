@@ -12,8 +12,11 @@ var DoctorEngines = []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode
 // doctor's Fix field can never drift out of sync (F2 slice 2, criterion 2.3). Lives here, not in
 // infra, so infra can depend on it (infra already imports usecase) without usecase depending back on
 // infra — the hexagonal layering direction stays intact.
-const CodexInstallFix = "codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git\n" +
-	"codex plugin add saki-builder@saketek"
+// DERIVED from CodexProvisionArgv (initenv.go) — the same mapping `saki init-env` executes. PRD §11
+// keeps installer command forms in ONE place: before F6 this text was a second, hand-written copy of
+// those argv vectors, so a marketplace/plugin-id move would have made doctor's advice and init-env's
+// behaviour disagree silently. Rendering it from the mapping makes that impossible by construction.
+var CodexInstallFix = renderProvisionArgv(CodexProvisionArgv)
 
 // DoctorService computes a pre-dispatch provisioning verdict per DoctorEngines. It never spawns
 // anything (rule 5) and never installs/writes/repairs (rule 1) — Check's only capability is the

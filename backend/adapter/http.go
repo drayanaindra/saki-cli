@@ -54,12 +54,13 @@ type Handler struct {
 }
 
 // NewHandler wires the usecase services into the HTTP handler.
-func NewHandler(branch usecase.BranchService, runs usecase.RunService, engine *usecase.BuildEngineService, list usecase.ListService, stream usecase.StreamService, stop usecase.StopService, proxy Proxy, gitWrite usecase.GitWriteService, roadmap usecase.RoadmapService, workitems usecase.WorkItemsService, prd usecase.PrdService, lock usecase.LockService, blockers usecase.BlockersService, sliceMeta usecase.SliceMetaService, resolve usecase.ResolveBlockerService, planTrack usecase.PlanTrackService, doctor usecase.DoctorService, initEnv ...usecase.InitEnvService) Handler {
-	var provisioner usecase.InitEnvService
-	if len(initEnv) > 0 {
-		provisioner = initEnv[0]
-	}
-	return Handler{branch: branch, runs: runs, engine: engine, list: list, stream: stream, stop: stop, proxy: proxy, gitWrite: gitWrite, roadmap: roadmap, workitems: workitems, prd: prd, lock: lock, blockers: blockers, sliceMeta: sliceMeta, resolve: resolve, planTrack: planTrack, doctor: doctor, initEnv: provisioner}
+// initEnv is a REQUIRED parameter, not a variadic. `Routes` registers POST /api/init-env
+// unconditionally, so a handler built without the service would carry a zero-value InitEnvService
+// whose provisioner and proofs ports are nil — a registered route backed by a nil port, which
+// nil-panics on the first real request. That is the exact hazard TestDoctorHandler_RealWiring was
+// written to catch for DoctorService; making the parameter required turns it into a compile error.
+func NewHandler(branch usecase.BranchService, runs usecase.RunService, engine *usecase.BuildEngineService, list usecase.ListService, stream usecase.StreamService, stop usecase.StopService, proxy Proxy, gitWrite usecase.GitWriteService, roadmap usecase.RoadmapService, workitems usecase.WorkItemsService, prd usecase.PrdService, lock usecase.LockService, blockers usecase.BlockersService, sliceMeta usecase.SliceMetaService, resolve usecase.ResolveBlockerService, planTrack usecase.PlanTrackService, doctor usecase.DoctorService, initEnv usecase.InitEnvService) Handler {
+	return Handler{branch: branch, runs: runs, engine: engine, list: list, stream: stream, stop: stop, proxy: proxy, gitWrite: gitWrite, roadmap: roadmap, workitems: workitems, prd: prd, lock: lock, blockers: blockers, sliceMeta: sliceMeta, resolve: resolve, planTrack: planTrack, doctor: doctor, initEnv: initEnv}
 }
 
 // Routes returns the mux of Go-owned routes. Patterns are method-anchored (Go 1.22+).

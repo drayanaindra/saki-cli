@@ -77,6 +77,7 @@ func TestDoctorHandler_RealWiring(t *testing.T) {
 		gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(),
 		emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack(),
 		usecase.NewDoctorService(infra.EngineProofChecker{}),
+		usecase.NewInitEnvService(infra.EngineProvisioner{}, infra.EngineProofChecker{}),
 	)
 	srv := httptest.NewServer(h.Routes())
 	defer srv.Close()

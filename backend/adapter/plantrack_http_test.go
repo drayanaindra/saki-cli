@@ -33,7 +33,7 @@ func buildPlanTrackHandler(fs fakeContentFS, w usecase.ContentWriter) Handler {
 	eng := newEngine(&fakeSpawner{}, &fakeJournal{writable: true}, st, &fakeKiller{})
 	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px,
 		gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), emptyPrd(), emptyLock(),
-		emptyBlockers(), emptySliceMeta(), emptyResolve(), planTrackSvc(fs, w), emptyDoctor())
+		emptyBlockers(), emptySliceMeta(), emptyResolve(), planTrackSvc(fs, w), emptyDoctor(), emptyInitEnv())
 }
 
 func planFSFor(content string) fakeContentFS {

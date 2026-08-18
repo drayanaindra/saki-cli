@@ -26,7 +26,7 @@ func buildPrdHandler(fs fakeContentFS) Handler {
 	sk := usecase.NewStopService(st, &fakeKiller{})
 	eng := newEngine(&fakeSpawner{}, &fakeJournal{writable: true}, st, &fakeKiller{})
 	return NewHandler(usecase.NewBranchService(fakeBranchReader{}), rs, eng, usecase.NewListService(st, px, fakeFullOutput{}), ss, sk, px,
-		gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), prdSvc(fs), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack(), emptyDoctor())
+		gitWriteSvc(fakeGitWriter{}), emptyRoadmap(), emptyWorkitems(), prdSvc(fs), emptyLock(), emptyBlockers(), emptySliceMeta(), emptyResolve(), emptyPlanTrack(), emptyDoctor(), emptyInitEnv())
 }
 
 func getJSON(t *testing.T, url string) (int, map[string]any) {
