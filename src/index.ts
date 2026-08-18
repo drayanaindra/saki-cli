@@ -32,6 +32,9 @@ import {
 } from './commands/repo.js'
 import { cmdArtifacts } from './commands/artifacts.js'
 import { cmdDoctor } from './commands/doctor.js'
+import { cmdInitEnv } from './commands/init-env.js'
+import { cmdBackend } from './commands/backend.js'
+import { ensureDaemon, readDaemonState } from './daemon.js'
 
 // Flags every command accepts.
 const COMMON: FlagSpec = { json: 'boolean', cwd: 'string' }
@@ -125,6 +128,13 @@ const COMMANDS: CommandDef[] = [
     run: (ctx) => cmdStatus(ctx),
   },
   {
+    path: ['backend'],
+    usage: 'saki backend start|stop|status',
+    summary: 'start, stop, or inspect the saki backend daemon',
+    flags: COMMON,
+    run: (ctx, positionals, flags) => cmdBackend(ctx, positionals, flags),
+  },
+  {
     path: ['mcp'],
     usage: 'saki mcp',
     summary: "start an MCP server exposing saki's journey commands as typed tools",
@@ -139,6 +149,13 @@ const COMMANDS: CommandDef[] = [
     summary: 'can codex/opencode actually run a saki-builder command, before you dispatch a run',
     flags: { ...COMMON, profile: 'string' },
     run: (ctx, positionals, flags) => cmdDoctor(ctx, positionals, flags),
+  },
+  {
+    path: ['init-env'],
+    usage: 'saki init-env --engine claude|codex|opencode [--profile <dir>]',
+    summary: 'provision and verify one engine profile',
+    flags: { ...COMMON, engine: 'string', profile: 'string' },
+    run: (ctx, positionals, flags) => cmdInitEnv(ctx, positionals, flags),
   },
   {
     path: ['roadmap', 'list'],
@@ -323,10 +340,19 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<ExitCod
       return EXIT.OK
     }
 
+    const lifecycleCommand = match.def.path[0] === 'backend'
+    let daemonState = null
+    if (!lifecycleCommand && !deps.fetchImpl && !env.SAKI_BACKEND_URL) {
+      const before = await readDaemonState(env)
+      daemonState = await ensureDaemon(env)
+      if (daemonState.pid > 0 && (!before || before.pid !== daemonState.pid)) writeErr(`daemon:autostart {result:"success",pid:${daemonState.pid}}`)
+    }
+
     const ctx = makeCtx({
       client: new StudioClient({
         env,
         fetchImpl: deps.fetchImpl,
+        socketPath: daemonState?.socketPath ?? undefined,
       }),
       cwd: resolveCwd(
         typeof parsed.flags.cwd === 'string' ? parsed.flags.cwd : undefined,
@@ -335,6 +361,7 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<ExitCod
       json: parsed.flags.json === true,
       write,
       writeErr,
+      env,
     })
 
     return await match.def.run(ctx, parsed.positionals, parsed.flags)

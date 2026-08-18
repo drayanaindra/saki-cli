@@ -31,6 +31,7 @@ const GO_ROUTES: RegExp[] = [
   /^\/api\/create-mr($|\?)/,
   /^\/api\/merge-to-main($|\?)/,
   /^\/api\/doctor($|\?)/,
+  /^\/api\/init-env($|\?)/,
   /^\/api\/roadmap($|\?)/,
   /^\/api\/workitems($|\?)/,
   /^\/api\/prd($|\?)/,

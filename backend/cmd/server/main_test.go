@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -84,5 +87,37 @@ func TestProxyMode_AgreesWithSelectProxy(t *testing.T) {
 			t.Fatalf("upstream %q: selectProxy standalone=%v but log says %q — the log must not lie about the mode",
 				upstream, isNull, proxyMode(upstream))
 		}
+	}
+}
+
+func TestDaemonSocketPath_IsSiblingOfStateAndStateWireFormat(t *testing.T) {
+	dir := t.TempDir()
+	state := filepath.Join(dir, "backend.state.json")
+	t.Setenv("SAKI_DAEMON_STATE_PATH", state)
+	if got, want := daemonSocketPath(), filepath.Join(dir, "backend.sock"); got != want {
+		t.Fatalf("socket path = %q, want %q", got, want)
+	}
+	writeDaemonState(daemonSocketPath(), "127.0.0.1:8788")
+	raw, err := os.ReadFile(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		PID        int    `json:"pid"`
+		SocketPath string `json:"socketPath"`
+		GoURL      string `json:"goUrl"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.PID <= 0 || body.SocketPath != daemonSocketPath() || body.GoURL != "http://127.0.0.1:8788" {
+		t.Fatalf("unexpected state: %+v", body)
+	}
+}
+
+func TestUnixSocketLimit_IsPlatformSafe(t *testing.T) {
+	limit := unixSocketLimit()
+	if limit != 103 && limit != 107 {
+		t.Fatalf("unix socket limit = %d", limit)
 	}
 }

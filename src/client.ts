@@ -1,5 +1,6 @@
 import { EXIT, CliError, type ExitCode } from './exit.js'
 import { backendFor, DEFAULT_GO_URL, type Backend } from './routes.js'
+import { socketFetch } from './daemon.js'
 
 // HTTP client for the studio orchestrator (apps/server/src/index.ts, PORT default 8787).
 //
@@ -32,6 +33,7 @@ export interface StudioClientOptions {
   goUrl?: string
   fetchImpl?: typeof fetch
   env?: Record<string, string | undefined>
+  socketPath?: string
 }
 
 export type Query = Record<string, string | number | boolean | undefined>
@@ -102,6 +104,7 @@ export class StudioClient {
   // origin", which is a URL that can only fail confusingly.
   readonly expressConfigured: boolean
   private readonly fetchImpl: typeof fetch
+  private readonly socketFetchImpl?: typeof fetch
 
   constructor(opts: StudioClientOptions = {}) {
     const env = opts.env ?? process.env
@@ -111,6 +114,9 @@ export class StudioClient {
     this.goUrl = opts.goUrl ?? (opts.baseUrl ? opts.baseUrl : resolveGoUrl(env))
     this.expressConfigured = Boolean(opts.baseUrl) || (env.SAKI_STUDIO_URL?.trim() ?? '') !== ''
     this.fetchImpl = opts.fetchImpl ?? fetch
+    if (opts.socketPath && !opts.fetchImpl && !this.expressConfigured && !env.SAKI_BACKEND_URL) {
+      this.socketFetchImpl = socketFetch(opts.socketPath)
+    }
   }
 
   // Base URL of a named backend, independent of any path. `health()` is the caller that needs this:
@@ -150,7 +156,8 @@ export class StudioClient {
   private async requestOn(backend: Backend, path: string, init?: RequestInit, query?: Query): Promise<Response> {
     const origin = this.originOf(backend)
     try {
-      return await this.fetchImpl(joinUrl(origin, path, query), init)
+      const fetcher = backend === 'go' && this.socketFetchImpl ? this.socketFetchImpl : this.fetchImpl
+      return await fetcher(joinUrl(origin, path, query), init)
     } catch {
       // A rejected fetch here means the socket never opened (studio down, wrong port, wrong host).
       // Distinguishing that from an HTTP error is the whole point of exit code 3.

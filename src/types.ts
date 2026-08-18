@@ -112,3 +112,12 @@ export interface EngineReport {
 export interface DoctorResult {
   engines: EngineReport[]
 }
+
+export interface InitEnvResult {
+  engine: string
+  profile: string
+  changed: boolean
+  status: 'ok' | 'failed'
+  reason: string
+  fix: string
+}

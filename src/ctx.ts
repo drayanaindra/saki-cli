@@ -9,6 +9,7 @@ export interface Ctx {
   json: boolean
   write: (s: string) => void
   writeErr: (s: string) => void
+  env: Record<string, string | undefined>
 }
 
 export type Command = (ctx: Ctx, positionals: string[], flags: Record<string, string | boolean>) => Promise<ExitCode>
@@ -21,6 +22,7 @@ export function makeCtx(over: Partial<Ctx> & { client: StudioClient }): Ctx {
     json: false,
     write: console.log,
     writeErr: console.error,
+    env: process.env,
     ...over,
   }
 }

@@ -50,11 +50,16 @@ type Handler struct {
 	resolve   usecase.ResolveBlockerService
 	planTrack usecase.PlanTrackService
 	doctor    usecase.DoctorService // F2 slice 1: engine provisioning verdict
+	initEnv   usecase.InitEnvService
 }
 
 // NewHandler wires the usecase services into the HTTP handler.
-func NewHandler(branch usecase.BranchService, runs usecase.RunService, engine *usecase.BuildEngineService, list usecase.ListService, stream usecase.StreamService, stop usecase.StopService, proxy Proxy, gitWrite usecase.GitWriteService, roadmap usecase.RoadmapService, workitems usecase.WorkItemsService, prd usecase.PrdService, lock usecase.LockService, blockers usecase.BlockersService, sliceMeta usecase.SliceMetaService, resolve usecase.ResolveBlockerService, planTrack usecase.PlanTrackService, doctor usecase.DoctorService) Handler {
-	return Handler{branch: branch, runs: runs, engine: engine, list: list, stream: stream, stop: stop, proxy: proxy, gitWrite: gitWrite, roadmap: roadmap, workitems: workitems, prd: prd, lock: lock, blockers: blockers, sliceMeta: sliceMeta, resolve: resolve, planTrack: planTrack, doctor: doctor}
+func NewHandler(branch usecase.BranchService, runs usecase.RunService, engine *usecase.BuildEngineService, list usecase.ListService, stream usecase.StreamService, stop usecase.StopService, proxy Proxy, gitWrite usecase.GitWriteService, roadmap usecase.RoadmapService, workitems usecase.WorkItemsService, prd usecase.PrdService, lock usecase.LockService, blockers usecase.BlockersService, sliceMeta usecase.SliceMetaService, resolve usecase.ResolveBlockerService, planTrack usecase.PlanTrackService, doctor usecase.DoctorService, initEnv ...usecase.InitEnvService) Handler {
+	var provisioner usecase.InitEnvService
+	if len(initEnv) > 0 {
+		provisioner = initEnv[0]
+	}
+	return Handler{branch: branch, runs: runs, engine: engine, list: list, stream: stream, stop: stop, proxy: proxy, gitWrite: gitWrite, roadmap: roadmap, workitems: workitems, prd: prd, lock: lock, blockers: blockers, sliceMeta: sliceMeta, resolve: resolve, planTrack: planTrack, doctor: doctor, initEnv: provisioner}
 }
 
 // Routes returns the mux of Go-owned routes. Patterns are method-anchored (Go 1.22+).
@@ -95,6 +100,7 @@ func (h Handler) Routes() *http.ServeMux {
 	// siblings above — it discloses local profile filesystem paths in its reason field, same class of
 	// disclosure as every route in this block.
 	mux.Handle("GET /api/doctor", OriginGuard(http.HandlerFunc(h.doctorHandler)))
+	mux.Handle("POST /api/init-env", OriginGuard(http.HandlerFunc(h.initEnvHandler)))
 	// F4 · P3 slice 3: PRD lock WRITE. OriginGuard-wrapped (BR7) — same TS global-guard parity; R3
 	// (domain.ValidateLockRequest) contains the path, OriginGuard the origin (DNS-rebind/CSRF).
 	mux.Handle("POST /api/lock-prd", OriginGuard(http.HandlerFunc(h.lockHandler)))
@@ -238,6 +244,24 @@ func (h Handler) doctorHandler(w http.ResponseWriter, r *http.Request) {
 		configDir = &p
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"engines": h.doctor.Check(configDir)})
+}
+
+func (h Handler) initEnvHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Cwd     string `json:"cwd"`
+		Engine  string `json:"engine"`
+		Profile string `json:"profile"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "invalid request body"})
+		return
+	}
+	var profile *string
+	if req.Profile != "" {
+		profile = &req.Profile
+	}
+	status, body := h.initEnv.Provision(usecase.ProvisionRequest{Cwd: req.Cwd, Engine: domain.RunEngine(req.Engine), Profile: profile})
+	writeJSON(w, status, body)
 }
 
 // workitemsHandler mirrors apps/server GET /api/workitems: 422 when cwd is missing, else the PRD/plan

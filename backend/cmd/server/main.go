@@ -6,11 +6,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/drayanaindra/saki-cli/backend/adapter"
@@ -102,6 +108,7 @@ func main() {
 	resolveSvc := usecase.NewResolveBlockerService(contentFS, contentFS)    // F4 slice 5: resolve-blocker write
 	planTrackSvc := usecase.NewPlanTrackService(contentFS, contentFS)       // F4 slice 6: plan-track roadmap writes
 	doctorSvc := usecase.NewDoctorService(infra.EngineProofChecker{})       // F2 slice 1: engine provisioning verdict
+	initEnvSvc := usecase.NewInitEnvService(infra.EngineProvisioner{}, infra.EngineProofChecker{})
 
 	// F6 slice 1: the NEW periodic sweep — fires due auto-resumes (the restart-safe backstop for the
 	// in-memory timers). Go has no recurring all-runs poll otherwise; slice 3 adds the stall watchdog here.
@@ -113,7 +120,7 @@ func main() {
 		}
 	}()
 
-	h := adapter.NewHandler(branchSvc, runSvc, engineSvc, listSvc, streamSvc, stopSvc, proxy, gitWriteSvc, roadmapSvc, workitemsSvc, prdSvc, lockSvc, blockersSvc, sliceMetaSvc, resolveSvc, planTrackSvc, doctorSvc)
+	h := adapter.NewHandler(branchSvc, runSvc, engineSvc, listSvc, streamSvc, stopSvc, proxy, gitWriteSvc, roadmapSvc, workitemsSvc, prdSvc, lockSvc, blockersSvc, sliceMetaSvc, resolveSvc, planTrackSvc, doctorSvc, initEnvSvc)
 	mux := h.Routes()
 	// F5 · P4 slice 1: proto asset serve (GET /api/proto/{dir}/{rest...}) — mounted as a sub-handler onto
 	// the same mux (avoids a 16th NewHandler arg), OriginGuard-wrapped, reusing the read-only content FS.
@@ -138,9 +145,87 @@ func main() {
 	// unreachable off-host — a 127.0.0.1 bind refuses any non-loopback connection at the network layer
 	// (§10 rule 5 / AC 4.2). The Vite proxy targets http://127.0.0.1:8788 to match this IPv4 bind.
 	addr := loopbackAddr(port)
-	log.Printf("saki go backend listening on http://%s (%s)", addr, proxyMode(upstream))
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	tcp, err := net.Listen("tcp", addr)
+	if err != nil {
 		log.Fatal(err)
+	}
+	go func() {
+		if err := http.Serve(tcp, mux); err != nil && err != http.ErrServerClosed {
+			log.Printf("tcp serve: %v", err)
+		}
+	}()
+
+	socketPath := ""
+	var unix net.Listener
+	if runtime.GOOS != "windows" {
+		socketPath = daemonSocketPath()
+		if len([]byte(socketPath)) > unixSocketLimit() {
+			log.Printf("unix socket disabled: path too long: %s", socketPath)
+			socketPath = ""
+		} else {
+			_ = os.MkdirAll(filepath.Dir(socketPath), 0o700)
+			_ = os.Remove(socketPath)
+			unix, err = net.Listen("unix", socketPath)
+			if err != nil {
+				log.Printf("unix socket disabled: %v", err)
+				socketPath = ""
+			} else {
+				if err := os.Chmod(socketPath, 0o600); err != nil {
+					log.Printf("unix socket chmod: %v", err)
+				}
+				go func() {
+					if err := http.Serve(unix, mux); err != nil && err != http.ErrServerClosed {
+						log.Printf("unix serve: %v", err)
+					}
+				}()
+			}
+		}
+	}
+	writeDaemonState(socketPath, addr)
+	log.Printf("saki go backend listening on http://%s (%s), socket=%s", addr, proxyMode(upstream), socketPath)
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
+	<-sig
+	if unix != nil {
+		_ = unix.Close()
+		_ = os.Remove(socketPath)
+	}
+	_ = tcp.Close()
+	_ = os.Remove(daemonStatePath())
+	os.Exit(0)
+}
+
+func daemonStatePath() string {
+	if path := strings.TrimSpace(os.Getenv("SAKI_DAEMON_STATE_PATH")); path != "" {
+		return path
+	}
+	return filepath.Join(os.TempDir(), fmt.Sprintf("saki-%d", os.Getuid()), "backend.state.json")
+}
+
+func daemonSocketPath() string { return filepath.Join(filepath.Dir(daemonStatePath()), "backend.sock") }
+
+func unixSocketLimit() int {
+	if runtime.GOOS == "darwin" {
+		return 103
+	}
+	return 107
+}
+
+func writeDaemonState(socketPath, addr string) {
+	path := daemonStatePath()
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	socket := any(nil)
+	if socketPath != "" {
+		socket = socketPath
+	}
+	body, err := json.Marshal(map[string]any{"pid": os.Getpid(), "socketPath": socket, "goUrl": "http://" + addr})
+	if err != nil {
+		log.Printf("daemon state: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		log.Printf("daemon state: %v", err)
 	}
 }
 
