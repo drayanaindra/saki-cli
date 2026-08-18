@@ -1,0 +1,10 @@
+{
+  "epic": "F3",
+  "slug": "mcp-surface-saki-mcp",
+  "title": "MCP surface (`saki mcp`)",
+  "prd": "tasks/prd-mcp-surface-saki-mcp.md",
+  "phase": "proto-ready",
+  "started_at": 1786811979,
+  "prd_written": true,
+  "review": { "rounds": 2, "verdict": "SHIP", "readiness": "READY", "phase1": "PASSED", "blockers_fixed": 40 }
+}

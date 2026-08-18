@@ -1,0 +1,15 @@
+{
+  "prd": "tasks/prd-mcp-surface-saki-mcp.md",
+  "branch": "feature/mcp-surface",
+  "commitPolicy": "per-step",
+  "slices": [
+    { "n": 1, "title": "MCP server skeleton + saki_status", "status": "done",
+      "steps": { "rplan": {"status":"done","artifact":"tasks/mcp-surface-saki-mcp-slice1-plan.md"}, "approved": {"status":"done","commit":"d95947a"}, "qa": {"status":"done"}, "reviewer": {"status":"done"}, "security": {"status":"n/a"} } },
+    { "n": 2, "title": "Read-only journey tools", "status": "done",
+      "steps": { "rplan": {"status":"done","artifact":"tasks/mcp-surface-saki-mcp-slice2-plan.md"}, "approved": {"status":"done","commit":"86cbbf2"}, "qa": {"status":"done"}, "reviewer": {"status":"done","commit":"8a7431c"}, "security": {"status":"done"} } },
+    { "n": 3, "title": "Run lifecycle tools", "status": "done",
+      "steps": { "rplan": {"status":"done","artifact":"tasks/mcp-surface-saki-mcp-slice3-plan.md"}, "approved": {"status":"done","commit":"314d638"}, "qa": {"status":"done"}, "reviewer": {"status":"done","commit":"356fa11"}, "security": {"status":"done"} } },
+    { "n": 4, "title": "Repo/git + PRD lock tools", "status": "done",
+      "steps": { "rplan": {"status":"done","artifact":"tasks/mcp-surface-saki-mcp-slice4-plan.md"}, "approved": {"status":"done","commit":"a2139ad"}, "qa": {"status":"done"}, "reviewer": {"status":"done","commit":"da44546"}, "security": {"status":"done"} } }
+  ]
+}

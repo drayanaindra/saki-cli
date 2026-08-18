@@ -1,0 +1,10 @@
+{
+  "epic": "F1",
+  "slug": "daemon-lifecycle-unix-socket-transport",
+  "title": "Daemon lifecycle + unix-socket transport",
+  "prd": "tasks/prd-daemon-lifecycle-unix-socket-transport.md",
+  "phase": "proto-ready",
+  "started_at": 1786859918,
+  "prd_written": true,
+  "review": { "rounds": 2, "verdict": "SHIP", "readiness": "READY", "phase1": "PASSED (round 2)", "blockers_fixed": 38 }
+}

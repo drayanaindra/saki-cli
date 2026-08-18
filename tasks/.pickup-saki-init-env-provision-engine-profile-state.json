@@ -1,0 +1,10 @@
+{
+  "epic": "F6",
+  "slug": "saki-init-env-provision-engine-profile",
+  "title": "`saki init-env` — provision an engine profile",
+  "prd": "tasks/prd-saki-init-env-provision-engine-profile.md",
+  "phase": "proto-ready",
+  "started_at": 1786896000,
+  "prd_written": true,
+  "review": { "rounds": 2, "verdict": "SHIP", "readiness": "READY", "phase1": "PASSED (round 2)", "blockers_fixed": 8 }
+}

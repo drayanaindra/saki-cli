@@ -1,0 +1,7 @@
+{
+  "slug": "daemon-lifecycle-unix-socket-transport",
+  "prd": "tasks/prd-daemon-lifecycle-unix-socket-transport.md",
+  "phase": "reviewing",
+  "started_at": 1786860543,
+  "review": { "rounds": 1, "verdict": "REVISE", "readiness": "NOT READY", "blockers_fixed": 36 }
+}

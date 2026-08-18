@@ -1,0 +1,60 @@
+{
+  "prd": "tasks/prd-saki-doctor-verify-engine-provisioning-before-a-run.md",
+  "branch": "feature/saki-doctor",
+  "commitPolicy": "per-step",
+  "slices": [
+    {
+      "n": 1,
+      "title": "one shared engine->proof mapping, and saki doctor reports codex + opencode",
+      "status": "done",
+      "steps": {
+        "rplan": {
+          "status": "done",
+          "artifact": "tasks/saki-doctor-verify-engine-provisioning-before-a-run-slice1-plan.md"
+        },
+        "approved": {
+          "status": "done"
+        },
+        "qa": {
+          "status": "done"
+        },
+        "reviewer": {
+          "status": "done"
+        },
+        "security": {
+          "status": "n/a",
+          "reason": "no NEW security surface \u2014 /api/doctor is loopback-only + OriginGuard, same as 7 sibling routes; already covered by rplan-reviews dedicated Security Expert pass (0 blockers)"
+        },
+        "rplanreview": {
+          "status": "done",
+          "blockers_fixed": 6
+        }
+      }
+    },
+    {
+      "n": 2,
+      "title": "verdicts you can trust: binary-absent, provable agreement, and complete remediation",
+      "status": "done",
+      "steps": {
+        "rplan": {
+          "status": "done",
+          "artifact": "tasks/saki-doctor-verify-engine-provisioning-before-a-run-slice2-plan.md"
+        },
+        "approved": {
+          "status": "done"
+        },
+        "qa": {
+          "status": "done"
+        },
+        "reviewer": {
+          "status": "done",
+          "verdict": "SHIP (0 blockers, 7 warnings \u2014 all fixed in a follow-up commit)"
+        },
+        "security": {
+          "status": "n/a",
+          "reason": "no NEW security surface \u2014 same /api/doctor route, loopback-only + OriginGuard, already covered by slice 1's dedicated Security Expert pass; slice 2 adds no new endpoint/auth surface"
+        }
+      }
+    }
+  ]
+}

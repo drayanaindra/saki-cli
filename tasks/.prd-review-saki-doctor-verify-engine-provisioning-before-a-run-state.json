@@ -1,0 +1,12 @@
+{
+  "slug": "saki-doctor-verify-engine-provisioning-before-a-run",
+  "prd": "tasks/prd-saki-doctor-verify-engine-provisioning-before-a-run.md",
+  "phase": "green",
+  "started_at": 1786802402,
+  "review": {
+    "rounds": 3,
+    "verdict": "SHIP",
+    "readiness": "READY",
+    "blockers_fixed": 34
+  }
+}

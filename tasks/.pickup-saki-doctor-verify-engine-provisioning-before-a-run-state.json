@@ -1,0 +1,16 @@
+{
+  "epic": "F2",
+  "slug": "saki-doctor-verify-engine-provisioning-before-a-run",
+  "title": "`saki doctor` — verify engine provisioning before a run",
+  "prd": "tasks/prd-saki-doctor-verify-engine-provisioning-before-a-run.md",
+  "phase": "proto-ready",
+  "started_at": 1786802058,
+  "prd_written": true,
+  "review": {
+    "rounds": 3,
+    "verdict": "SHIP",
+    "readiness": "READY",
+    "phase1": "PASSED (round 2, after 2 structural fixes)",
+    "blockers_fixed": 34
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "slug": "mcp-surface-saki-mcp",
+  "prd": "tasks/prd-mcp-surface-saki-mcp.md",
+  "phase": "green",
+  "started_at": 1786842043,
+  "review": { "rounds": 2, "verdict": "SHIP", "readiness": "READY", "blockers_fixed": 40 }
+}
