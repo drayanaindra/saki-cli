@@ -122,6 +122,7 @@ rejects `--json` as an unknown flag.
 saki status                                  # is the studio up, and will it let me in
 saki mcp                                     # start an MCP server exposing journey commands as typed tools
 saki doctor [--profile <dir>]                # can codex/opencode run a saki-builder command, before you dispatch
+saki init-env --engine <e> [--profile <dir>] # provision ONE engine profile, then prove it (codex only so far)
 saki roadmap list                            # work items in this repo
 saki roadmap add "<intent>" --feature        # also --epic --improvement --bug (one is required)
 
@@ -195,6 +196,46 @@ which, plus a `fix` command when one has been authored). This slice reports only
 `opencode` — claude coverage is a separate, later item. A studio-unreachable or gated-studio failure
 surfaces as the **existing** `3`/`6` codes (see the exit-code table above), not a doctor-specific one.
 
+To *fix* an engine doctor reports as not-ok, run `saki init-env --engine <e>` — doctor never repairs
+anything, by design.
+
+### `saki init-env` — provision an engine profile, then prove it
+
+The mutating counterpart to `saki doctor`: it installs the saki-builder commands into ONE engine's
+profile and then re-runs **the same proof** doctor uses. `--profile <dir>` pins which profile is
+provisioned, exactly as it pins which profile doctor checks; omitted, it is the engine's default.
+
+```console
+$ saki init-env --engine codex --profile /tmp/p1 --json
+{"engine":"codex","profile":"/tmp/p1","changed":true,"status":"ok","reason":"","fix":""}
+$ saki init-env --engine codex --profile /tmp/p1 --json   # idempotent — nothing left to do
+{"engine":"codex","profile":"/tmp/p1","changed":false,"status":"ok","reason":"","fix":""}
+```
+
+| Field | Meaning |
+|---|---|
+| `engine` | the engine that was provisioned |
+| `profile` | the profile that was provisioned — `"default"` when `--profile` was omitted. **`"default"` is a label, not a path**: to check it afterwards call `saki doctor --json` with *no* `--profile`, never `--profile default` |
+| `changed` | whether the selected namespace actually changed, from a before/after fingerprint of the files the proof reads. **Never** inferred from an installer's exit code |
+| `status` | `ok` only if the shared proof passed; otherwise `failed` |
+| `reason` / `fix` | why it failed, and the remediation — the same `fix` text doctor prints |
+
+| Exit | When |
+|---|---|
+| `0` | the engine's shared proof passed |
+| `1` | setup or the proof failed. **The same code `saki doctor` returns** for a failed engine report — not `5`, which is reserved for the `{ok:false}` refusal envelope |
+| `2` | bad arguments: unknown/missing `--engine`, or a relative `--profile` escaping the repo |
+
+`status` is decided by the proof, never by the installer. An unprovisioned codex still exits `0` (the
+model just answers that it cannot find the command), so a child's exit code proves nothing — and a
+*failing* child proves nothing either: a repeat `codex plugin marketplace add` reports "already
+added" while the profile is perfectly fine. Only reading the profile settles it.
+
+**Scope today: codex only.** `--engine opencode` and `--engine claude` are accepted, exit `1`, and
+make **no** write — opencode lands in F6 slice 2, claude once doctor can prove plugin enablement.
+An absolute `--profile` is taken as given (a legitimate profile lives outside the repo, e.g.
+`~/.codex`); only a *relative* one is confined to the repository.
+
 ### Engines — `--engine claude|opencode|codex`
 
 Every run-start command takes `--engine`, choosing which agent runtime executes the run. **Omit it for
@@ -204,16 +245,23 @@ Every run-start command takes `--engine`, choosing which agent runtime executes 
 |---|---|---|---|
 | `claude` *(default)* | `claude` | from the message | already true if the studio works |
 | `opencode` | `opencode` | via `--command` — its `run` never expands a slash command that arrives in the message | `opencode plugin @saketek/saki-builder --global` + `npx @saketek/saki-builder install --global` |
-| `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | `codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git` + `codex plugin add saki-builder@saketek` |
+| `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | **`saki init-env --engine codex`** (runs `codex plugin marketplace add …` + `codex plugin add saki-builder@saketek`, then proves the result) |
 
 ```bash
-# one-time provisioning
-codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
-codex plugin add saki-builder@saketek
-bash scripts/install-codex-skills.sh   # verifies it; prints the fix if unprovisioned
+# one-time provisioning — one command, and it verifies itself
+saki init-env --engine codex          # exit 0 means the profile really resolves the commands
 
 # then, from any repo
 saki build E22 --engine codex --follow
+```
+
+By hand, if you prefer — this is exactly what `saki init-env` runs, and it is still the only route
+for opencode until F6 slice 2:
+
+```bash
+codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
+codex plugin add saki-builder@saketek
+bash scripts/install-codex-skills.sh   # legacy checker (and a --symlink fallback for pinned profiles)
 ```
 
 `--profile <dir>` pins that run's engine config dir, and means a different variable per engine:

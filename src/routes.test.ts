@@ -17,6 +17,15 @@ describe('backendFor — the CLI must split traffic exactly as the UI proxy does
     }
   })
 
+  // Only the Go backend implements /api/init-env. If this entry is ever dropped from GO_ROUTES the
+  // POST goes to Express and every init-env criterion fails as UNREACHABLE 3 — a transport error
+  // that reads nothing like "the route moved", which is why it is pinned here.
+  it('routes the mutating setup surface to Go', () => {
+    for (const p of ['/api/init-env', '/api/init-env?x=1']) {
+      expect(backendFor(p, true)).toBe('go')
+    }
+  })
+
   it('routes the git surface to Go', () => {
     for (const p of ['/api/branch', '/api/branches', '/api/switch-branch', '/api/create-mr']) {
       expect(backendFor(p, true)).toBe('go')

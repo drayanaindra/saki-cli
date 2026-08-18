@@ -118,12 +118,21 @@ each has to be provisioned to do so:
 |---|---|---|---|
 | `claude` *(default)* | `claude` | from the message | already true if the studio works |
 | `opencode` | `opencode` | via `--command` (its `run` never expands a slash command in the message), skills installed **bare** | `opencode plugin @saketek/saki-builder --global` + `npx @saketek/saki-builder install --global` |
-| `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | `codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git` + `codex plugin add saki-builder@saketek` |
+| `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | **`saki init-env --engine codex`** (runs the two plugin commands below, then proves the result) |
+
+```bash
+saki init-env --engine codex [--profile <dir>]   # exit 0 == the profile really resolves the commands
+```
+
+`saki init-env` is the supported entry point: it provisions ONE engine's profile and then re-runs the
+same proof `saki doctor` uses, so exit `0` means the profile is genuinely ready — an installer's own
+exit code is never the signal. It is codex-only for now (`--engine opencode` and `--engine claude`
+exit `1` and write nothing). The equivalent by hand, still the only route for opencode:
 
 ```bash
 codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
 codex plugin add saki-builder@saketek
-bash scripts/install-codex-skills.sh    # verifies the above; prints the fix if unprovisioned
+bash scripts/install-codex-skills.sh    # legacy checker; prints the fix if unprovisioned
 ```
 
 The plugin carries the skills, agents and hooks. **Do not also symlink them** — that creates a second,

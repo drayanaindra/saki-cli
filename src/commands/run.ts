@@ -86,21 +86,11 @@ export function buildRunPrompt(verb: string, arg: string): string {
   return `/saki-builder:${verb}${a ? ` ${a}` : ''}`
 }
 
-// E26 — the agent runtime a run executes on. Validated by the Go backend at the boundary
-// (backend/adapter/http.go parseRunEngine): only these, or empty for the claude default.
-export const RUN_ENGINES = ['claude', 'opencode', 'codex'] as const
-export type RunEngine = (typeof RUN_ENGINES)[number]
-
-export function isRunEngine(v: string): v is RunEngine {
-  return (RUN_ENGINES as readonly string[]).includes(v)
-}
-
-// Shared by index.ts's `startRun` helper and the `saki_run_start` MCP tool — same byte-identical
-// message/hint reasoning as `assertRunVerb` above.
-export function assertRunEngine(v: string): RunEngine {
-  if (isRunEngine(v)) return v
-  fail(`unknown engine: ${v}`, EXIT.USAGE, `expected one of ${RUN_ENGINES.join(', ')}`)
-}
+// E26 — the agent-runtime vocabulary moved to src/engines.ts (the shared plumbing tier) once
+// `saki init-env` became a second consumer: commands never import each other, so a command cannot be
+// the home of something two commands need. Re-exported here so existing importers are untouched.
+import type { RunEngine } from '../engines.js'
+export { RUN_ENGINES, isRunEngine, assertRunEngine, type RunEngine } from '../engines.js'
 
 export interface RunStartFlags {
   profile?: string
