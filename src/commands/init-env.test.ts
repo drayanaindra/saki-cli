@@ -105,7 +105,7 @@ describe('cmdInitEnv', () => {
       ...ok,
       engine: 'claude',
       changed: false,
-      status: 'failed',
+      status: 'not_verified',
       reason: 'engine provisioning is not verified for this engine (claude requires F4)',
       fix: '',
     }

@@ -22,7 +22,7 @@
       "status": "done",
       "steps": {
         "rplan": { "status": "done", "artifact": "tasks/saki-init-env-provision-engine-profile-slice2-plan.md" },
-        "approved": { "status": "done", "commit": "pending" },
+        "approved": { "status": "done", "commit": "99d3112dabe937988a19dc6944c07cb78f385c75" },
         "qa": { "status": "done", "evidence": "focused F6 e2e 5 passed; Vitest 383; backend 680; go vet; typecheck; coverage above 80%" },
         "reviewer": { "status": "done", "verdict": "no blocking findings recorded" },
         "security": { "status": "done", "verdict": "no confirmed new HIGH/MEDIUM findings; specialist agents unavailable" }

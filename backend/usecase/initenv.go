@@ -70,9 +70,13 @@ func (s InitEnvService) Provision(req ProvisionRequest) (int, map[string]any) {
 		return status, invalid
 	}
 	base := newInitEnvResult(req)
-	// Slice 1 provisions codex only; slice 2 adds opencode. The refusal for engines NOT yet
-	// provisionable lives at the SERVICE, not merely untested at the adapter, so an unreachable
-	// engine's installer cannot be invoked at all. Slice 3 widens the predicate to claude (after F4).
+	if req.Engine == domain.EngineClaude {
+		base["status"] = string(domain.InitEnvStatusNotVerified)
+		base["reason"] = ErrInitEnvUnsupported.Error() + unsupportedReason[req.Engine]
+		base["fix"] = ""
+		return http200, base
+	}
+	// The refusal for engines not provisionable lives at the service, not merely untested at the adapter.
 	if req.Engine != domain.EngineCodex && req.Engine != domain.EngineOpencode {
 		base["reason"] = ErrInitEnvUnsupported.Error() + unsupportedReason[req.Engine]
 		return http200, base
@@ -104,7 +108,7 @@ const http200 = 200
 // succeed flips the result to ok and clears the remediation — `fix` is seeded up front so that EVERY
 // failure path carries it, which would otherwise leave a stale "how to install" line on a success.
 func succeed(base map[string]any) (int, map[string]any) {
-	base["status"] = string(domain.StatusOK)
+	base["status"] = string(domain.InitEnvStatusOK)
 	base["fix"] = ""
 	return http200, base
 }
@@ -162,7 +166,7 @@ func newInitEnvResult(req ProvisionRequest) map[string]any {
 		// Plain strings, deliberately: this map is marshalled straight to JSON, and a named
 		// domain.EngineStatus in a map[string]any breaks every consumer's `.(string)` assertion
 		// while looking identical on the wire.
-		"status": string(domain.StatusFailed),
+		"status": string(domain.InitEnvStatusFailed),
 		"reason": "",
 		"fix":    engineInstallFix(req.Engine),
 	}

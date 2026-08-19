@@ -217,7 +217,7 @@ $ saki init-env --engine codex --profile /tmp/p1 --json   # idempotent — nothi
 | `engine` | the engine that was provisioned |
 | `profile` | the profile that was provisioned — `"default"` when `--profile` was omitted. **`"default"` is a label, not a path**: to check it afterwards call `saki doctor --json` with *no* `--profile`, never `--profile default` |
 | `changed` | whether the selected namespace actually changed, from a before/after fingerprint of the files the proof reads. **Never** inferred from an installer's exit code |
-| `status` | `ok` only if the shared proof passed; otherwise `failed` |
+| `status` | `ok` only if the shared proof passed; `failed` for setup/proof failure; `not_verified` when Claude is refused before F4's proof exists |
 | `reason` / `fix` | why it failed, and the remediation — the same `fix` text doctor prints |
 
 | Exit | When |
@@ -231,8 +231,9 @@ model just answers that it cannot find the command), so a child's exit code prov
 *failing* child proves nothing either: a repeat `codex plugin marketplace add` reports "already
 added" while the profile is perfectly fine. Only reading the profile settles it.
 
-**Scope today: codex and opencode.** `--engine claude` is accepted, exits `1`, and makes **no** write —
-claude lands once doctor can prove plugin enablement (F4). An absolute `--profile` is taken as given (a
+**Scope today: codex and opencode.** `--engine claude` is accepted, exits `1`, returns
+`status:"not_verified"`, and makes **no** write — claude lands once doctor can prove plugin enablement
+(F4). An absolute `--profile` is taken as given (a
 legitimate profile lives outside the repo, e.g. `~/.codex`); only a *relative* one is confined to the
 repository.
 

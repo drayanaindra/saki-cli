@@ -128,7 +128,7 @@ saki init-env --engine opencode [--profile <dir>]   # ditto, for opencode
 `saki init-env` is the supported entry point: it provisions ONE engine's profile and then re-runs the
 same proof `saki doctor` uses, so exit `0` means the profile is genuinely ready — an installer's own
 exit code is never the signal. It covers codex and opencode (`--engine claude` exits `1` and writes
-nothing until doctor can prove plugin enablement). The equivalent by hand:
+nothing until doctor can prove plugin enablement; its init-env status is `not_verified`). The equivalent by hand:
 
 ```bash
 codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git

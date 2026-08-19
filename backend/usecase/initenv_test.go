@@ -32,14 +32,20 @@ func (p *spyProvisioner) Provision(ProvisionRequest) (bool, error) {
 // must be able to disagree — that difference is exactly what "the proof decides, not the installer"
 // means. The last entry repeats, so a single-element sequence behaves like a constant.
 type stubProofs struct {
-	binaryErr  error
-	profileErr []error
-	calls      int
+	binaryErr    error
+	profileErr   []error
+	binaryCalls  int
+	profileCalls int
+	calls        int
 }
 
-func (p *stubProofs) BinaryCheck(domain.RunEngine) error { return p.binaryErr }
+func (p *stubProofs) BinaryCheck(domain.RunEngine) error {
+	p.binaryCalls++
+	return p.binaryErr
+}
 
 func (p *stubProofs) ProfileProof(domain.RunEngine, *string) error {
+	p.profileCalls++
 	if len(p.profileErr) == 0 {
 		return nil
 	}
@@ -56,16 +62,20 @@ var errNotProvisioned = errors.New("codex profile does not resolve @saketek/saki
 func TestInitEnvServiceClaudeIsNotVerifiedWithoutWriting(t *testing.T) {
 	dir := t.TempDir()
 	adapter := &spyProvisioner{changed: true}
-	svc := NewInitEnvService(adapter, &stubProofs{})
+	proofs := &stubProofs{}
+	svc := NewInitEnvService(adapter, proofs)
 
 	status, body := svc.Provision(ProvisionRequest{Cwd: dir, Engine: domain.EngineClaude})
 
-	if status != 200 || body["status"] != "failed" || body["changed"] != false {
+	if status != 200 || body["status"] != string(domain.InitEnvStatusNotVerified) || body["changed"] != false {
 		t.Fatalf("status=%d body=%v", status, body)
 	}
-	// §10 non-goal + criterion 3.2: claude must make NO write before F4's proof exists.
-	if adapter.calls != 0 {
-		t.Fatalf("claude reached the adapter %d times, want 0", adapter.calls)
+	if body["reason"] != ErrInitEnvUnsupported.Error()+unsupportedReason[domain.EngineClaude] || body["fix"] != "" {
+		t.Fatalf("body=%v, want explicit F4 reason and no fix", body)
+	}
+	// §10 non-goal + criterion 3.2: claude must make NO write or profile/proof lookup before F4.
+	if adapter.calls != 0 || proofs.binaryCalls != 0 || proofs.profileCalls != 0 {
+		t.Fatalf("claude calls: adapter=%d binary=%d profile=%d, want all 0", adapter.calls, proofs.binaryCalls, proofs.profileCalls)
 	}
 }
 

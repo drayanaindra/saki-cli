@@ -117,7 +117,7 @@ export interface InitEnvResult {
   engine: string
   profile: string
   changed: boolean
-  status: 'ok' | 'failed'
+  status: 'ok' | 'failed' | 'not_verified'
   reason: string
   fix: string
 }
