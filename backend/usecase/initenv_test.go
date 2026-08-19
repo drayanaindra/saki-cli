@@ -226,24 +226,48 @@ func TestInitEnvServiceProfileLabelMatchesDoctor(t *testing.T) {
 	}
 }
 
-// Slice 1 provisions codex only, and the refusal lives in the SERVICE — so opencode's installer
-// (whose `npx … --global` writes OUTSIDE the selected profile, contradicting PRD §9 rule 3) is
-// unreachable, not merely untested, until slice 2 gives it real criteria and real coverage.
-func TestInitEnvServiceOpencodeIsUnsupportedWithoutAdapter(t *testing.T) {
+// Slice 2 lands the opencode adapter. The service now provisions opencode like codex — the proof
+// decides (BR2), the adapter runs only when the profile is not already proven, and an already-proven
+// opencode profile is a `changed:false` no-op that never reaches the adapter (criterion 2.2/2.4).
+func TestInitEnvServiceProvisionsOpencodeThenProves(t *testing.T) {
 	dir := t.TempDir()
 	adapter := &spyProvisioner{changed: true}
-	svc := NewInitEnvService(adapter, &stubProofs{})
+	proofs := &stubProofs{profileErr: []error{errNotProvisioned, nil}}
+	svc := NewInitEnvService(adapter, proofs)
 
 	status, body := svc.Provision(ProvisionRequest{Cwd: dir, Engine: domain.EngineOpencode})
 
-	if status != 200 || body["status"] != "failed" {
+	if status != 200 || body["status"] != "ok" {
 		t.Fatalf("status=%d body=%v", status, body)
 	}
-	if adapter.calls != 0 {
-		t.Fatalf("opencode reached the adapter %d times, want 0 (slice 2 owns it)", adapter.calls)
+	if body["changed"] != true {
+		t.Fatalf("changed=%v, want true on a fresh opencode profile", body["changed"])
 	}
-	if reason, _ := body["reason"].(string); !strings.Contains(reason, "slice 2") {
-		t.Fatalf("reason=%q, want it to name the slice that lands opencode", reason)
+	if adapter.calls != 1 {
+		t.Fatalf("adapter invoked %d times, want 1", adapter.calls)
+	}
+	if fix, _ := body["fix"].(string); fix != "" {
+		t.Fatalf("fix=%q on a success, want empty (succeed() clears it)", fix)
+	}
+}
+
+// Criterion 2.2 / 2.4: an already-proven opencode profile is a no-op — the installer is never invoked,
+// so it cannot duplicate a plugin entry, and `changed` stays false.
+func TestInitEnvServiceOpencodeAlreadyProvenSkipsAdapter(t *testing.T) {
+	dir := t.TempDir()
+	adapter := &spyProvisioner{changed: true}
+	svc := NewInitEnvService(adapter, &stubProofs{}) // proof passes on the first call
+
+	status, body := svc.Provision(ProvisionRequest{Cwd: dir, Engine: domain.EngineOpencode})
+
+	if status != 200 || body["status"] != "ok" {
+		t.Fatalf("status=%d body=%v", status, body)
+	}
+	if body["changed"] != false {
+		t.Fatalf("changed=%v, want false on an already-provisioned opencode profile", body["changed"])
+	}
+	if adapter.calls != 0 {
+		t.Fatalf("adapter invoked %d times on an already-provisioned opencode profile, want 0", adapter.calls)
 	}
 }
 
@@ -269,6 +293,51 @@ func TestInitEnvServiceSerializesProvisionsPerProfile(t *testing.T) {
 
 	if peak := adapter.maxConcurrent.Load(); peak > 1 {
 		t.Fatalf("%d concurrent provisions of one profile; want them serialized", peak)
+	}
+}
+
+func TestProfileLockKeyCollapsesEquivalentOpencodeProfiles(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(home, ".config")
+	if got, want := profileLockKey(domain.EngineOpencode, nil), profileLockKey(domain.EngineOpencode, &root); got != want {
+		t.Fatalf("default and explicit opencode profiles use different lock keys: %q != %q", got, want)
+	}
+	if got := profileLockKey(domain.EngineCodex, &root); got == profileLockKey(domain.EngineOpencode, &root) {
+		t.Fatal("codex and opencode profiles must not share a lock key")
+	}
+}
+
+func TestProfileGateSerializesEquivalentOpencodeProfiles(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(home, ".config")
+	g := newProfileGate()
+	unlockDefault := g.lock(domain.EngineOpencode, nil)
+	started := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		close(started)
+		unlockExplicit := g.lock(domain.EngineOpencode, &root)
+		unlockExplicit()
+		close(done)
+	}()
+	<-started
+	time.Sleep(time.Millisecond)
+	select {
+	case <-done:
+		t.Fatal("equivalent explicit opencode profile acquired its lock concurrently")
+	case <-time.After(10 * time.Millisecond):
+	}
+	unlockDefault()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("explicit opencode lock did not acquire after default lock released")
 	}
 }
 
@@ -306,5 +375,43 @@ func TestCodexInstallFixIsRenderedFromTheProvisionArgv(t *testing.T) {
 	}
 	if len(CodexProvisionArgv) == 0 || CodexProvisionArgv[0][0] != "codex" {
 		t.Fatalf("CodexProvisionArgv must invoke codex, got %v", CodexProvisionArgv)
+	}
+}
+
+// Same drift-lock as the codex twin: OpencodeInstallFix is RENDERED from OpencodeProvisionArgv, so
+// what `saki init-env --engine opencode` executes and what `saki doctor` tells the operator to run
+// can never diverge (PRD §11). Also pins the safety-critical shape: the ONE vector must be
+// `opencode plugin … --global` (profile-contained via pinned XDG_CONFIG_HOME), never an `npx …
+// install --global` that writes outside the selected profile (PRD §9 rule 3).
+func TestOpencodeInstallFixIsRenderedFromTheProvisionArgv(t *testing.T) {
+	lines := strings.Split(OpencodeInstallFix, "\n")
+	if len(lines) != len(OpencodeProvisionArgv) {
+		t.Fatalf("OpencodeInstallFix has %d lines, OpencodeProvisionArgv has %d vectors", len(lines), len(OpencodeProvisionArgv))
+	}
+	for i, vec := range OpencodeProvisionArgv {
+		if want := strings.Join(vec, " "); lines[i] != want {
+			t.Errorf("line %d = %q, want %q", i, lines[i], want)
+		}
+	}
+	if len(OpencodeProvisionArgv) != 1 {
+		t.Fatalf("OpencodeProvisionArgv must be a single vector, got %d", len(OpencodeProvisionArgv))
+	}
+	vec := OpencodeProvisionArgv[0]
+	if vec[0] != "opencode" || vec[len(vec)-1] != "--global" {
+		t.Fatalf("opencode provisioning must be `opencode plugin … --global`, got %v", vec)
+	}
+}
+
+// engineInstallFix must cover every provisionable engine, and stay empty for claude (slice 3) so a
+// not-verified engine never advertises a command that would be run.
+func TestEngineInstallFixCoversProvisionableEngines(t *testing.T) {
+	if got := engineInstallFix(domain.EngineCodex); got != CodexInstallFix {
+		t.Fatalf("codex fix = %q, want CodexInstallFix", got)
+	}
+	if got := engineInstallFix(domain.EngineOpencode); got != OpencodeInstallFix {
+		t.Fatalf("opencode fix = %q, want OpencodeInstallFix", got)
+	}
+	if got := engineInstallFix(domain.EngineClaude); got != "" {
+		t.Fatalf("claude fix = %q, want empty (slice 3 owns claude)", got)
 	}
 }

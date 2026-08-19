@@ -92,25 +92,29 @@ func TestInitEnvHandlerRejectsBadInputWithoutInvokingAnAdapter(t *testing.T) {
 	}
 }
 
-// Slice 1 provisions codex only, and opencode is refused at the SERVICE — so its installer (whose
-// `npx … --global` writes outside the selected profile) is unreachable through the route, not merely
-// untested. The response is a normal 200 verdict body, not a 422: the request was well-formed.
-func TestInitEnvHandlerOpencodeIsUnsupportedWithoutInvokingAnAdapter(t *testing.T) {
+// Slice 2 lands the opencode adapter. With the fake proofs passing, a well-formed opencode request
+// short-circuits at the proof (already-proven profile → `ok`, `changed:false`) WITHOUT invoking the
+// adapter — the structural idempotency of criterion 2.2/2.4. The request is well-formed, so the status
+// is a normal 200 verdict body, not a 422.
+func TestInitEnvHandlerOpencodeShortCircuitsAtProof(t *testing.T) {
 	spy := &countingProvisioner{}
 	rec := postInitEnv(t, initEnvHandlerFor(spy).Routes(), `{"cwd":"/tmp","engine":"opencode"}`, "")
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (a well-formed request with an unsupported engine)", rec.Code)
+		t.Fatalf("status = %d, want 200 (a well-formed opencode request)", rec.Code)
 	}
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["status"] != "failed" {
-		t.Fatalf("status = %v, want failed", body["status"])
+	if body["status"] != "ok" {
+		t.Fatalf("status = %v, want ok on an already-proven opencode profile", body["status"])
+	}
+	if body["changed"] != false {
+		t.Fatalf("changed = %v, want false (adapter not invoked)", body["changed"])
 	}
 	if spy.calls != 0 {
-		t.Fatalf("opencode reached the provisioner %d times, want 0 (slice 2 owns it)", spy.calls)
+		t.Fatalf("opencode reached the provisioner %d times on an already-proven profile, want 0", spy.calls)
 	}
 }
 

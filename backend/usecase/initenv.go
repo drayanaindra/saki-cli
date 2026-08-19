@@ -15,8 +15,7 @@ var ErrInitEnvUnsupported = errors.New("engine provisioning is not verified for 
 // unsupportedReason explains, per engine, WHY provisioning is refused — so an agent can tell
 // "retry later" from "this will never work until another feature ships" and stop instead of looping.
 var unsupportedReason = map[domain.RunEngine]string{
-	domain.EngineClaude:   " (claude requires F4's installed + enabled plugin proof)",
-	domain.EngineOpencode: " (opencode lands in F6 slice 2)",
+	domain.EngineClaude: " (claude requires F4's installed + enabled plugin proof)",
 }
 
 // ProvisionRequest is the validated command. Profile is the engine-profile ROOT (the same input
@@ -71,10 +70,10 @@ func (s InitEnvService) Provision(req ProvisionRequest) (int, map[string]any) {
 		return status, invalid
 	}
 	base := newInitEnvResult(req)
-	// Slice 1 provisions codex only. The refusal is at the SERVICE, not merely untested at the
-	// adapter, so opencode's `npx … --global` (which writes outside the selected profile) is
-	// unreachable until slice 2 gives it real criteria. Slice 2/3 widen this one predicate.
-	if req.Engine != domain.EngineCodex {
+	// Slice 1 provisions codex only; slice 2 adds opencode. The refusal for engines NOT yet
+	// provisionable lives at the SERVICE, not merely untested at the adapter, so an unreachable
+	// engine's installer cannot be invoked at all. Slice 3 widens the predicate to claude (after F4).
+	if req.Engine != domain.EngineCodex && req.Engine != domain.EngineOpencode {
 		base["reason"] = ErrInitEnvUnsupported.Error() + unsupportedReason[req.Engine]
 		return http200, base
 	}
@@ -85,7 +84,7 @@ func (s InitEnvService) Provision(req ProvisionRequest) (int, map[string]any) {
 		return http200, base
 	}
 
-	unlock := s.gate.lock(req.Profile)
+	unlock := s.gate.lock(req.Engine, req.Profile)
 	defer unlock()
 
 	if s.proofs.ProfileProof(req.Engine, req.Profile) == nil {
@@ -172,10 +171,14 @@ func newInitEnvResult(req ProvisionRequest) map[string]any {
 // engineInstallFix reuses doctor's remediation verbatim, so `saki init-env` and `saki doctor` can
 // never print different fixes for the same unprovisioned engine.
 func engineInstallFix(engine domain.RunEngine) string {
-	if engine == domain.EngineCodex {
+	switch engine {
+	case domain.EngineCodex:
 		return CodexInstallFix
+	case domain.EngineOpencode:
+		return OpencodeInstallFix
+	default:
+		return ""
 	}
-	return ""
 }
 
 func firstError(errs ...error) error {
@@ -187,10 +190,9 @@ func firstError(errs ...error) error {
 	return nil
 }
 
-// profileGate hands out one mutex per resolved profile path. Keyed by string (not by pointer) so the
-// default profile and an explicitly-named one collapse onto the same key when they mean the same
-// thing. Entries are never evicted: the key space is the set of profile paths an operator names,
-// which is tiny and bounded by hand.
+// profileGate hands out one mutex per engine profile path. Default and explicitly named paths that
+// resolve to the same filesystem profile share a key; different engines remain isolated even when they
+// share a profile root.
 type profileGate struct {
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
@@ -200,11 +202,11 @@ func newProfileGate() *profileGate {
 	return &profileGate{locks: make(map[string]*sync.Mutex)}
 }
 
-func (g *profileGate) lock(profile *string) func() {
+func (g *profileGate) lock(engine domain.RunEngine, profile *string) func() {
 	if g == nil {
 		return func() {} // zero-value service (a test fake): nothing to serialize
 	}
-	key := profileLabel(profile)
+	key := profileLockKey(engine, profile)
 	g.mu.Lock()
 	m, ok := g.locks[key]
 	if !ok {
@@ -216,6 +218,37 @@ func (g *profileGate) lock(profile *string) func() {
 	return m.Unlock
 }
 
+func profileLockKey(engine domain.RunEngine, profile *string) string {
+	root := profilePath(engine, profile)
+	return string(engine) + "\x00" + root
+}
+
+func profilePath(engine domain.RunEngine, profile *string) string {
+	if profile != nil && *profile != "" {
+		root := filepath.Clean(*profile)
+		switch engine {
+		case domain.EngineCodex:
+			return filepath.Join(root, "codex")
+		case domain.EngineOpencode:
+			return filepath.Join(root, "opencode")
+		default:
+			return root
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "default"
+	}
+	switch engine {
+	case domain.EngineCodex:
+		return filepath.Join(home, ".codex")
+	case domain.EngineOpencode:
+		return filepath.Join(home, ".config", "opencode")
+	default:
+		return filepath.Join(home, ".config", "claude")
+	}
+}
+
 // CodexProvisionArgv is THE codex engine mapping — the single place the marketplace URL and the
 // plugin id appear. PRD §11 (installer drift): "command forms are external contracts; keep them in
 // one engine mapping". CodexInstallFix is DERIVED from it below, so the command `saki init-env`
@@ -223,6 +256,19 @@ func (g *profileGate) lock(profile *string) func() {
 var CodexProvisionArgv = [][]string{
 	{"codex", "plugin", "marketplace", "add", "https://github.com/drayanaindra/saki-builder.git"},
 	{"codex", "plugin", "add", "saki-builder@saketek"},
+}
+
+// OpencodeProvisionArgv is THE opencode engine mapping — the single place the plugin id appears.
+// A single vector: `opencode plugin @saketek/saki-builder --global`. The `--global` flag is SAFE here
+// ONLY because provisionEnv pins XDG_CONFIG_HOME to the selected profile, which redirects opencode's
+// "global" scope into <profile>/opencode — the profile OpencodePluginProof then reads (verified
+// empirically: with XDG_CONFIG_HOME pinned, `--global` writes only <profile>/opencode/opencode.jsonc,
+// never ~/.config/opencode or a project .opencode). The unsafe form — `npx @saketek/saki-builder
+// install --global`, which writes to the npm global cache outside the profile (PRD §9 rule 3) — is
+// deliberately NOT here. OpencodeInstallFix is DERIVED below, so the command init-env runs and the
+// command doctor tells the operator to run cannot drift apart (PRD §11).
+var OpencodeProvisionArgv = [][]string{
+	{"opencode", "plugin", "@saketek/saki-builder", "--global"},
 }
 
 func renderProvisionArgv(argv [][]string) string {

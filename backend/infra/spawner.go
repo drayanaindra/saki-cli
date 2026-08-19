@@ -288,18 +288,16 @@ var engineMarkerPrefix = map[domain.RunEngine]string{
 // session's marker and can misdetect. Pre-existing, engine-symmetric, and not fixable here without
 // crossing BR5 — see tasks/codex-engine-plan.md §7.
 //
-// 2. OWN PROFILE VARS, when UNPINNED — so a foreign profile can't be picked up and the profile the
-// preflight proof validated is the one that actually runs.
-func scrubProfileEnv(base []string, engine domain.RunEngine, pinned bool) []string {
+// 2. OWN PROFILE VARS — always shed the inherited selector before optionally pinning the selected
+// profile below. Removing it for pinned profiles prevents duplicate entries from preserving a foreign
+// OPENCODE_CONFIG (or another engine's selector) in the child environment.
+func scrubProfileEnv(base []string, engine domain.RunEngine, _ bool) []string {
 	if engine != domain.EngineClaude {
 		for other, prefix := range engineMarkerPrefix {
 			if other != engine {
 				base = filterEnvPrefix(base, prefix)
 			}
 		}
-	}
-	if pinned {
-		return base // an explicit profile is about to be set below; nothing to shed
 	}
 	switch engine {
 	case domain.EngineOpencode:

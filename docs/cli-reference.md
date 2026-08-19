@@ -122,7 +122,7 @@ rejects `--json` as an unknown flag.
 saki status                                  # is the studio up, and will it let me in
 saki mcp                                     # start an MCP server exposing journey commands as typed tools
 saki doctor [--profile <dir>]                # can codex/opencode run a saki-builder command, before you dispatch
-saki init-env --engine <e> [--profile <dir>] # provision ONE engine profile, then prove it (codex only so far)
+saki init-env --engine <e> [--profile <dir>] # provision ONE engine profile, then prove it (codex/opencode; claude not yet)
 saki roadmap list                            # work items in this repo
 saki roadmap add "<intent>" --feature        # also --epic --improvement --bug (one is required)
 
@@ -231,10 +231,10 @@ model just answers that it cannot find the command), so a child's exit code prov
 *failing* child proves nothing either: a repeat `codex plugin marketplace add` reports "already
 added" while the profile is perfectly fine. Only reading the profile settles it.
 
-**Scope today: codex only.** `--engine opencode` and `--engine claude` are accepted, exit `1`, and
-make **no** write — opencode lands in F6 slice 2, claude once doctor can prove plugin enablement.
-An absolute `--profile` is taken as given (a legitimate profile lives outside the repo, e.g.
-`~/.codex`); only a *relative* one is confined to the repository.
+**Scope today: codex and opencode.** `--engine claude` is accepted, exits `1`, and makes **no** write —
+claude lands once doctor can prove plugin enablement (F4). An absolute `--profile` is taken as given (a
+legitimate profile lives outside the repo, e.g. `~/.codex`); only a *relative* one is confined to the
+repository.
 
 ### Engines — `--engine claude|opencode|codex`
 
@@ -244,7 +244,7 @@ Every run-start command takes `--engine`, choosing which agent runtime executes 
 | `--engine` | Binary | How it resolves a `/saki-builder:*` command | Provision with |
 |---|---|---|---|
 | `claude` *(default)* | `claude` | from the message | already true if the studio works |
-| `opencode` | `opencode` | via `--command` — its `run` never expands a slash command that arrives in the message | `opencode plugin @saketek/saki-builder --global` + `npx @saketek/saki-builder install --global` |
+| `opencode` | `opencode` | via `--command` — its `run` never expands a slash command that arrives in the message | **`saki init-env --engine opencode`** (runs `opencode plugin @saketek/saki-builder --global` with `XDG_CONFIG_HOME` pinned to the profile, then proves the result) |
 | `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | **`saki init-env --engine codex`** (runs `codex plugin marketplace add …` + `codex plugin add saki-builder@saketek`, then proves the result) |
 
 ```bash
@@ -255,13 +255,15 @@ saki init-env --engine codex          # exit 0 means the profile really resolves
 saki build E22 --engine codex --follow
 ```
 
-By hand, if you prefer — this is exactly what `saki init-env` runs, and it is still the only route
-for opencode until F6 slice 2:
+By hand, if you prefer — this is exactly what `saki init-env` runs:
 
 ```bash
 codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
 codex plugin add saki-builder@saketek
 bash scripts/install-codex-skills.sh   # legacy checker (and a --symlink fallback for pinned profiles)
+
+# opencode — the single command form `saki init-env --engine opencode` runs
+opencode plugin @saketek/saki-builder --global   # run with XDG_CONFIG_HOME=<dir> to target a profile
 ```
 
 `--profile <dir>` pins that run's engine config dir, and means a different variable per engine:

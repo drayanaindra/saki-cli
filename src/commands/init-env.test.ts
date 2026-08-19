@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { mkdirSync, symlinkSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { cmdInitEnv } from './init-env.js'
 import { StudioClient } from '../client.js'
 import { makeCtx } from '../ctx.js'
@@ -81,6 +84,19 @@ describe('cmdInitEnv', () => {
     expect(code).toBe(EXIT.OK)
     expect(posts[0].body).toMatchObject({ profile: '/somewhere/else/.codex' })
   })
+
+  it('rejects a repository-relative symlink that resolves outside cwd', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'saki-init-env-'))
+    const outside = mkdtempSync(join(tmpdir(), 'saki-init-env-outside-'))
+    const link = join(root, 'profile')
+    mkdirSync(root, { recursive: true })
+    symlinkSync(outside, link)
+    const { ctx, posts } = ctxFor(ok)
+    const scopedCtx = { ...ctx, cwd: root }
+    await expect(cmdInitEnv(scopedCtx, [], { engine: 'codex', profile: 'profile' })).rejects.toMatchObject({ code: EXIT.USAGE })
+    expect(posts).toHaveLength(0)
+  })
+
 
   // An unsupported engine is a real verdict, not a transport failure: EXIT.ERROR with the reason
   // printed, so an agent can tell "stop, this needs another feature" from "retry".

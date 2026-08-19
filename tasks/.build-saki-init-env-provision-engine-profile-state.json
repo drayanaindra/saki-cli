@@ -1,0 +1,44 @@
+{
+  "prd": "tasks/prd-saki-init-env-provision-engine-profile.md",
+  "branch": "feature/saki-init-env-provision-engine-profile",
+  "commitPolicy": "per-step",
+  "reviewBase": "main",
+  "slices": [
+    {
+      "n": 1,
+      "title": "CLI contract and codex adapter",
+      "status": "done",
+      "steps": {
+        "rplan": { "status": "done", "artifact": "tasks/saki-init-env-provision-engine-profile-slice1-plan.md" },
+        "approved": { "status": "done", "commit": "4b558a5" },
+        "qa": { "status": "done" },
+        "reviewer": { "status": "done" },
+        "security": { "status": "done" }
+      }
+    },
+    {
+      "n": 2,
+      "title": "opencode adapter and shared verification",
+      "status": "done",
+      "steps": {
+        "rplan": { "status": "done", "artifact": "tasks/saki-init-env-provision-engine-profile-slice2-plan.md" },
+        "approved": { "status": "done", "commit": "pending" },
+        "qa": { "status": "done", "evidence": "focused F6 e2e 5 passed; Vitest 383; backend 680; go vet; typecheck; coverage above 80%" },
+        "reviewer": { "status": "done", "verdict": "no blocking findings recorded" },
+        "security": { "status": "done", "verdict": "no confirmed new HIGH/MEDIUM findings; specialist agents unavailable" }
+      }
+    },
+    {
+      "n": 3,
+      "title": "Claude support after F4",
+      "status": "not-started",
+      "steps": {
+        "rplan": { "status": "not-started" },
+        "approved": { "status": "not-started" },
+        "qa": { "status": "not-started" },
+        "reviewer": { "status": "not-started" },
+        "security": { "status": "not-started" }
+      }
+    }
+  ]
+}

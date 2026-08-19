@@ -123,10 +123,11 @@ test.describe('saki init-env — provision a codex profile, then prove it', () =
     expect(missing.status, 'a missing --engine must exit USAGE=2').toBe(2)
   })
 
-  // The unsupported engines are refused with a real verdict and no write — the boundary that keeps
-  // opencode's `npx … --global` (which writes outside the selected profile) unreachable until slice 2.
-  test('opencode and claude are refused without writing anything', () => {
-    for (const engine of ['opencode', 'claude']) {
+  // claude is refused with a real verdict and no write — the boundary that keeps claude's profile
+  // (which needs F4's installed + enabled proof) unreachable until slice 3. opencode is NOT here:
+  // slice 2 lands it as a provisioned engine, covered by e2e/opencode-init-env.spec.ts.
+  test('claude is refused without writing anything', () => {
+    for (const engine of ['claude']) {
       const profile = fs.mkdtempSync(path.join(os.tmpdir(), `saki-unsupported-${engine}-`))
       try {
         const res = saki(['init-env', '--engine', engine, '--profile', profile, '--json'])

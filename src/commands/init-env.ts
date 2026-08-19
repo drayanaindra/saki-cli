@@ -1,4 +1,5 @@
-import { isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import { realpathSync } from 'node:fs'
 import { emit } from '../output.js'
 import { EXIT, CliError, type ExitCode } from '../exit.js'
 import type { Ctx } from '../ctx.js'
@@ -47,11 +48,27 @@ function resolveProfileFlag(ctx: Ctx, flag: string | boolean | undefined): strin
   if (typeof flag !== 'string' || !flag) return undefined
   if (isAbsolute(flag)) return resolve(flag)
   const resolved = resolve(ctx.cwd, flag)
-  const rel = relative(ctx.cwd, resolved)
+  const lexicalRel = relative(ctx.cwd, resolved)
+  if (lexicalRel === '..' || lexicalRel.startsWith('../')) {
+    throw new CliError('profile path escapes the repository cwd', EXIT.USAGE)
+  }
+  const repoReal = realpathSync(ctx.cwd)
+  const targetReal = existingRealPath(resolved)
+  const rel = relative(repoReal, targetReal)
   if (rel === '..' || rel.startsWith('../')) {
     throw new CliError('profile path escapes the repository cwd', EXIT.USAGE)
   }
   return resolved
+}
+
+function existingRealPath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    const parent = dirname(path)
+    if (parent === path) return path
+    return resolve(existingRealPath(parent), basename(path))
+  }
 }
 
 // Names the profile, because "which profile did I just provision" is the entire question this

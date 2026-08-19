@@ -117,22 +117,26 @@ each has to be provisioned to do so:
 | `--engine` | Binary | How it resolves a saki command | Provision with |
 |---|---|---|---|
 | `claude` *(default)* | `claude` | from the message | already true if the studio works |
-| `opencode` | `opencode` | via `--command` (its `run` never expands a slash command in the message), skills installed **bare** | `opencode plugin @saketek/saki-builder --global` + `npx @saketek/saki-builder install --global` |
+| `opencode` | `opencode` | via `--command` (its `run` never expands a slash command in the message), skills installed **bare** | **`saki init-env --engine opencode`** (runs `opencode plugin @saketek/saki-builder --global` with `XDG_CONFIG_HOME` pinned to the profile, then proves the result) |
 | `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | **`saki init-env --engine codex`** (runs the two plugin commands below, then proves the result) |
 
 ```bash
-saki init-env --engine codex [--profile <dir>]   # exit 0 == the profile really resolves the commands
+saki init-env --engine codex [--profile <dir>]      # exit 0 == the profile really resolves the commands
+saki init-env --engine opencode [--profile <dir>]   # ditto, for opencode
 ```
 
 `saki init-env` is the supported entry point: it provisions ONE engine's profile and then re-runs the
 same proof `saki doctor` uses, so exit `0` means the profile is genuinely ready — an installer's own
-exit code is never the signal. It is codex-only for now (`--engine opencode` and `--engine claude`
-exit `1` and write nothing). The equivalent by hand, still the only route for opencode:
+exit code is never the signal. It covers codex and opencode (`--engine claude` exits `1` and writes
+nothing until doctor can prove plugin enablement). The equivalent by hand:
 
 ```bash
 codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
 codex plugin add saki-builder@saketek
 bash scripts/install-codex-skills.sh    # legacy checker; prints the fix if unprovisioned
+
+# opencode — the single command form, run with XDG_CONFIG_HOME=<dir> to target a profile
+opencode plugin @saketek/saki-builder --global
 ```
 
 The plugin carries the skills, agents and hooks. **Do not also symlink them** — that creates a second,

@@ -130,14 +130,14 @@ func TestDoctorService_Check(t *testing.T) {
 		}
 	})
 
-	t.Run("opencode never gets a Fix", func(t *testing.T) {
+	t.Run("opencode gets the rendered Fix", func(t *testing.T) {
 		f := &fakeEngineProofs{profileErr: map[domain.RunEngine]error{
 			domain.EngineOpencode: errors.New("opencode profile does not resolve @saketek/saki-builder"),
 		}}
 		reports := NewDoctorService(f).Check(nil)
 		opencode := reports[1]
-		if opencode.Fix != "" {
-			t.Errorf("opencode.Fix = %q, want empty — opencode remediation is deferred (F5)", opencode.Fix)
+		if opencode.Fix != OpencodeInstallFix {
+			t.Errorf("opencode.Fix = %q, want %q — doctor names the same command init-env runs (slice 2)", opencode.Fix, OpencodeInstallFix)
 		}
 	})
 }

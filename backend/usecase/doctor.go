@@ -18,6 +18,12 @@ var DoctorEngines = []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode
 // behaviour disagree silently. Rendering it from the mapping makes that impossible by construction.
 var CodexInstallFix = renderProvisionArgv(CodexProvisionArgv)
 
+// OpencodeInstallFix is opencode's single-line remediation — the SAME text init-env executes, rendered
+// from OpencodeProvisionArgv (initenv.go) so doctor's advice and init-env's behaviour can never drift
+// apart (PRD §11). Added in F6 slice 2, the "one string covers both engines" trigger recorded in
+// slice-1's Annotation Space: doctor now names the same opencode command init-env runs.
+var OpencodeInstallFix = renderProvisionArgv(OpencodeProvisionArgv)
+
 // DoctorService computes a pre-dispatch provisioning verdict per DoctorEngines. It never spawns
 // anything (rule 5) and never installs/writes/repairs (rule 1) — Check's only capability is the
 // EngineProofs port, so both are structural guarantees, not merely observed behavior.
@@ -50,9 +56,7 @@ func (s DoctorService) checkOne(engine domain.RunEngine, profile string, configD
 	}
 	if err := s.proofs.ProfileProof(engine, configDir); err != nil {
 		report.Status, report.Reason = domain.StatusFailed, err.Error()
-		if engine == domain.EngineCodex {
-			report.Fix = CodexInstallFix
-		}
+		report.Fix = engineInstallFix(engine)
 	}
 	return report
 }

@@ -76,13 +76,17 @@ func ensureEngineHome(engine domain.RunEngine, profile *string) error {
 	return nil
 }
 
-// provisionArgv resolves the engine's fixed command list. Codex-only in slice 1; usecase refuses the
-// other engines before reaching here, so this is a defence-in-depth guard rather than the gate.
+// provisionArgv resolves the engine's fixed command list. Codex + opencode in slice 2; usecase
+// refuses claude before reaching here, so this is a defence-in-depth guard rather than the gate.
 func provisionArgv(engine domain.RunEngine) ([][]string, bool) {
-	if engine == domain.EngineCodex {
+	switch engine {
+	case domain.EngineCodex:
 		return usecase.CodexProvisionArgv, true
+	case domain.EngineOpencode:
+		return usecase.OpencodeProvisionArgv, true
+	default:
+		return nil, false
 	}
-	return nil, false
 }
 
 // runProvision executes one fixed argv vector, bounded by provisionTimeout with Stdin=nil so a child

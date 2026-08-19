@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -19,6 +20,18 @@ func writeFakeCodex(t *testing.T, body string) {
 	t.Helper()
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// writeProvisioningFakeOpencode is the opencode twin of writeFakeCodex — a fake `opencode` that
+// records argv/env. Same rule-6 permission: argv and env plumbing only, never a plugin-registration
+// claim. (Named distinctly from spawner_test.go's writeFakeOpencode, whose shape is different.)
+func writeProvisioningFakeOpencode(t *testing.T, body string) {
+	t.Helper()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte("#!/bin/sh\n"+body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -136,6 +149,100 @@ exit 0
 	}
 }
 
+// 🔒 BR4 + the fixed-argv rule, for the opencode engine. Asserts the child sees the EXACT argv from
+// OpencodeProvisionArgv, that its EFFECTIVE XDG_CONFIG_HOME is the selected profile (which redirects
+// `opencode plugin … --global` into <profile>/opencode — PRD §9 rule 3: the only namespace this write
+// may touch), and that the codex/claude namespaces were shed. Foreign markers are PLANTED first, so an
+// absence assertion on a clean shell would pass even with scrubProfileEnv deleted entirely.
+func TestEngineProvisionerProvisionsOpencodeWithFixedArgvAndScrubbedEnv(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "record")
+	t.Setenv("SAKI_TEST_RECORD", out)
+	t.Setenv("CODEX_HOME", "/should-not-win")
+	t.Setenv("CLAUDE_CONFIG_DIR", "/should-not-win")
+	t.Setenv("CODEX_TOKEN", "must-not-leak")
+	t.Setenv("OPENCODE_CONFIG", "/should-not-win/opencode.json")
+	t.Setenv("XDG_CONFIG_HOME", "/should-not-win/xdg")
+	writeProvisioningFakeOpencode(t, `printf 'argv: %s\n' "$*" >> "$SAKI_TEST_RECORD"
+printf 'XDG_CONFIG_HOME=%s\n' "$XDG_CONFIG_HOME" >> "$SAKI_TEST_RECORD"
+printf 'OPENCODE_CONFIG=%s\n' "$OPENCODE_CONFIG" >> "$SAKI_TEST_RECORD"
+printf 'CODEX_HOME=%s|CLAUDE_CONFIG_DIR=%s|CODEX_TOKEN=%s\n' "$CODEX_HOME" "$CLAUDE_CONFIG_DIR" "$CODEX_TOKEN" >> "$SAKI_TEST_RECORD"
+exit 0
+`)
+	profile := t.TempDir()
+
+	if _, err := (EngineProvisioner{}).Provision(usecase.ProvisionRequest{
+		Cwd: t.TempDir(), Engine: domain.EngineOpencode, Profile: &profile,
+	}); err != nil {
+		t.Fatalf("provision failed: %v", err)
+	}
+
+	recorded, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(recorded)
+
+	for _, vec := range usecase.OpencodeProvisionArgv {
+		want := "argv: " + strings.Join(vec[1:], " ")
+		if !strings.Contains(got, want) {
+			t.Errorf("child argv missing %q\nrecorded:\n%s", want, got)
+		}
+	}
+	wantHome := "XDG_CONFIG_HOME=" + profile
+	if !strings.Contains(got, wantHome) {
+		t.Errorf("child XDG_CONFIG_HOME is not the selected profile; want %q\nrecorded:\n%s", wantHome, got)
+	}
+	if !strings.Contains(got, "OPENCODE_CONFIG=\n") {
+		t.Errorf("child inherited OPENCODE_CONFIG; recorded:\n%s", got)
+	}
+	if strings.Contains(got, "/should-not-win") {
+		t.Error("an inherited foreign namespace overrode the selected profile")
+	}
+	if !strings.Contains(got, "CODEX_HOME=|CLAUDE_CONFIG_DIR=|CODEX_TOKEN=") {
+		t.Errorf("foreign engine namespaces reached the opencode child\nrecorded:\n%s", got)
+	}
+}
+
+// Criteria 2.2 + 2.3 at the infra layer: an installer that fails returns a non-zero result (never a
+// silent ok), and the provisioner itself NEVER writes the config file — it only runs the installer
+// and fingerprints by reading. So a pre-existing (e.g. malformed) config file is preserved
+// byte-for-byte across a failed provision, satisfying "fails without truncating or replacing the
+// original file". The full parse-preservation is opencode's own behaviour, pinned by the real-binary
+// e2e; here we lock the provisioner's contribution — it must not be the thing that truncates.
+func TestEngineProvisionerInstallerFailureIsReturnedAndConfigPreserved(t *testing.T) {
+	profile := t.TempDir()
+	configDir := filepath.Join(profile, "opencode")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(configDir, "opencode.json")
+	original := []byte("{ this is not valid json ]")
+	if err := os.WriteFile(config, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The fake opencode fails the way the real one does on a malformed config.
+	writeProvisioningFakeOpencode(t, "echo 'PropertyNameExpected' >&2; exit 1\n")
+
+	changed, err := (EngineProvisioner{}).Provision(usecase.ProvisionRequest{
+		Cwd: t.TempDir(), Engine: domain.EngineOpencode, Profile: &profile,
+	})
+
+	if err == nil {
+		t.Fatal("an installer that failed must surface as a non-zero result, not a silent ok")
+	}
+	if changed {
+		t.Error("changed = true when the installer failed and nothing was written")
+	}
+	after, readErr := os.ReadFile(config)
+	if readErr != nil {
+		t.Fatalf("original config was removed by a failed provision: %v", readErr)
+	}
+	if !bytes.Equal(after, original) {
+		t.Fatalf("config was truncated/replaced by a failed provision\nwant %q\ngot  %q", original, after)
+	}
+}
+
 // An UNPINNED provision must shed an inherited CODEX_HOME, so the operator's environment cannot
 // redirect the write to a profile other than the one the proof then validates (~/.codex).
 func TestEngineProvisionerUnpinnedShedsInheritedCodexHome(t *testing.T) {
@@ -235,15 +342,13 @@ func TestSummarizeChildOutputIsBoundedToOneLine(t *testing.T) {
 	}
 }
 
-// The non-codex branch is unreachable through the service (slice 1 gates it), but the adapter keeps
+// The claude branch is unreachable through the service (slice 3 gates it), but the adapter keeps
 // its own guard so a future caller cannot reach an engine mapping that does not exist.
 func TestEngineProvisionerRefusesEnginesWithoutAMapping(t *testing.T) {
 	writeFakeCodex(t, "exit 0\n")
-	for _, engine := range []domain.RunEngine{domain.EngineOpencode, domain.EngineClaude} {
-		if _, err := (EngineProvisioner{}).Provision(usecase.ProvisionRequest{
-			Cwd: t.TempDir(), Engine: engine,
-		}); !errors.Is(err, usecase.ErrInitEnvUnsupported) {
-			t.Errorf("%s: err = %v, want ErrInitEnvUnsupported", engine, err)
-		}
+	if _, err := (EngineProvisioner{}).Provision(usecase.ProvisionRequest{
+		Cwd: t.TempDir(), Engine: domain.EngineClaude,
+	}); !errors.Is(err, usecase.ErrInitEnvUnsupported) {
+		t.Fatalf("claude: err = %v, want ErrInitEnvUnsupported (slice 3 owns claude)", err)
 	}
 }
