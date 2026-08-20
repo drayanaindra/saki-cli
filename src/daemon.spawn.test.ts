@@ -227,6 +227,43 @@ describe('ensureDaemon PID tracking and stale-state cleanup', () => {
     expect(childProcess.spawn).not.toHaveBeenCalled()
   })
 
+  // Security, READ side: validating only on write leaves the hijack open, because the reuse path
+  // returns a record before anything writes. A planted, healthy-looking record in a world-writable
+  // directory would otherwise hand over the socketPath the CLI dials and the PID `stop` signals.
+  it('does not trust a healthy-looking record from a world-writable directory', async () => {
+    const dir = await stateDir()
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    await writeFile(daemonStatePath(env), JSON.stringify({
+      pid: process.pid,
+      socketPath: '/tmp/attacker.sock',
+      goUrl: 'http://127.0.0.1:19999',
+    }))
+    await chmod(dir, 0o777)
+    // Everything the attacker controls answers healthy — only the directory's mode betrays it.
+    stubBackend(true)
+
+    await expect(readDaemonState(env)).resolves.toBeNull()
+    // Not trusted: no attacker-controlled socketPath to dial, and no attacker-controlled goUrl or
+    // PID carried forward. What comes back is derived from the environment, never from the file.
+    await expect(ensureDaemon(env)).resolves.toEqual({
+      pid: 0,
+      socketPath: null,
+      goUrl: DEFAULT_GO_URL,
+    })
+    expect(childProcess.spawn).not.toHaveBeenCalled()
+  })
+
+  // The same untrusted directory must fail LOUDLY the moment a write is attempted, rather than
+  // silently degrading — a read can fall back, a write cannot.
+  it('fails loudly when it has to write into a directory it does not own', async () => {
+    const dir = await stateDir()
+    await chmod(dir, 0o777)
+    stubBackend()
+
+    await expect(ensureDaemon({ SAKI_DAEMON_STATE_DIR: dir })).rejects.toMatchObject({ code: 3 })
+    expect(childProcess.spawn).not.toHaveBeenCalled()
+  })
+
   // Security: a symlink planted at the state path must be UNLINKED, never written through — a plain
   // 'w' open follows it and would truncate whatever it points at, as this user.
   it('replaces a symlink planted at the state path without writing through it', async () => {

@@ -121,8 +121,10 @@ describe('pre-flight auto-start', () => {
   })
 
   // `--help` must never spawn anything: it is the one command that has to work on a broken install.
+  // Uses an ORDINARY command, not `backend`: the lifecycle branch skips auto-start anyway, so
+  // `backend --help` could not tell the help short-circuit apart from the rule-4 skip.
   it('does not auto-start for a help request', async () => {
-    const { exit } = run(['backend', '--help'])
+    const { exit } = run(['status', '--help'])
 
     await expect(exit).resolves.toBe(EXIT.OK)
     expect(daemon.ensureDaemon).not.toHaveBeenCalled()
