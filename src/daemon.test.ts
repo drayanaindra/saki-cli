@@ -1,9 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { daemonStateDir, daemonStatePath, readDaemonState, waitForLiveness, binaryPath } from './daemon.js'
+import { daemonStateDir, daemonStatePath, readDaemonState, waitForLiveness, binaryPath, removeDaemonState, isAlive, ensureDaemon, stopDaemon } from './daemon.js'
 import { EXIT } from './exit.js'
+
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
 
 describe('daemon state and liveness', () => {
   it('uses a caller-provided UID-scoped state directory and reads the wire format', async () => {
@@ -37,4 +43,29 @@ describe('daemon state and liveness', () => {
   it('honors an explicit backend binary path', () => {
     expect(binaryPath({ SAKI_BACKEND_BIN: '/custom/saki-backend' })).toBe('/custom/saki-backend')
   })
+
+  it('removes missing state files and reports process liveness', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-test-'))
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    await expect(removeDaemonState(env)).resolves.toBeUndefined()
+    expect(isAlive(process.pid)).toBe(true)
+    expect(isAlive(-1)).toBe(false)
+  })
+
+  it('reuses an already healthy backend without spawning', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-test-'))
+    const env = { SAKI_DAEMON_STATE_DIR: dir, SAKI_BACKEND_URL: 'http://go.test' }
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    await expect(ensureDaemon(env)).resolves.toEqual({ pid: 0, socketPath: null, goUrl: 'http://go.test' })
+  })
+
+  it('reports a stale state as not running and removes it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-test-'))
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    await writeFile(daemonStatePath(env), JSON.stringify({ pid: 123, socketPath: null, goUrl: 'http://go.test' }))
+    vi.spyOn(process, 'kill').mockImplementation(() => { throw new Error('gone') })
+    await expect(stopDaemon(env)).resolves.toBe('not-running')
+    await expect(readDaemonState(env)).resolves.toBeNull()
+  })
+
 })
