@@ -2,7 +2,7 @@ import { open, readFile, lstat, stat, unlink, mkdir } from 'node:fs/promises'
 import { constants as FS_CONST, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { userInfo } from 'node:os'
+import { tmpdir, userInfo } from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Agent, fetch as undiciFetch } from 'undici'
 import { EXIT, CliError } from './exit.js'
@@ -44,14 +44,39 @@ const STATE_WRITE_FLAGS = FS_CONST.O_WRONLY | FS_CONST.O_CREAT | FS_CONST.O_TRUN
 
 export function daemonStateDir(env: DaemonEnv = process.env): string {
   const uid = userInfo().uid ?? process.getuid?.() ?? 0
-  return env.SAKI_DAEMON_STATE_DIR ?? join(env.TMPDIR ?? process.env.TMPDIR ?? '/tmp', `saki-${uid}`)
+  return env.SAKI_DAEMON_STATE_DIR ?? join(env.TMPDIR ?? tmpdir(), `saki-${uid}`)
 }
 
 export function daemonStatePath(env: DaemonEnv = process.env): string {
   return join(daemonStateDir(env), STATE_NAME)
 }
 
+// Is the state directory one this user exclusively owns?
+//
+// Group/other WRITE is the hijack bit — planting a state file or a socket, or unlinking one, needs
+// write on the directory. Read/traverse is not the threat: the records inside are 0600, so a 0755
+// directory (what an inherited umask commonly produces) grants no capability and must not be rejected.
+async function stateDirIsPrivate(env: DaemonEnv): Promise<boolean> {
+  // POSIX-only: uids and file modes are meaningless on Windows, where the socket is a declared
+  // Non-Goal and the CLI runs over TCP anyway.
+  const uid = process.getuid?.()
+  if (uid === undefined) return true
+  try {
+    // lstat, not stat: a symlink is not a directory here, which is the point — a planted link would
+    // otherwise satisfy mkdir and redirect every read and write below it.
+    const info = await lstat(daemonStateDir(env))
+    return info.isDirectory() && info.uid === uid && (info.mode & 0o022) === 0
+  } catch {
+    return false
+  }
+}
+
+// A record is only as trustworthy as the directory holding it, and this is the single funnel every
+// consumer reads through — the CLI dials the socketPath it returns and `saki backend stop` signals
+// the pid it returns. Validating only on WRITE would leave the hijack wide open: a planted,
+// healthy-looking record is believed on the reuse path long before anything writes.
 export async function readDaemonState(env: DaemonEnv = process.env): Promise<DaemonState | null> {
+  if (!(await stateDirIsPrivate(env))) return null
   try {
     const parsed = JSON.parse(await readFile(daemonStatePath(env), 'utf8')) as Partial<DaemonState>
     const pid = parsed.pid
@@ -178,18 +203,10 @@ async function spawnDaemon(env: DaemonEnv = process.env): Promise<ChildProcess> 
 async function ensurePrivateStateDir(env: DaemonEnv): Promise<void> {
   const dir = daemonStateDir(env)
   await mkdir(dir, { recursive: true, mode: 0o700 })
-  // POSIX-only: uid scoping and file modes are meaningless on Windows, where the socket is a
-  // declared Non-Goal and the CLI runs over TCP anyway.
-  const uid = process.getuid?.()
-  if (uid === undefined) return
-  const info = await lstat(dir)
-  // isDirectory() is false for a symlink under lstat, which is the point: a planted symlink would
-  // otherwise satisfy mkdir and redirect every write below it.
-  //
-  // Group/other WRITE is the hijack bit — planting a state file or socket needs write on the
-  // directory. Read/traverse is not the threat: the records inside are 0600, so a 0755 directory
-  // (what an inherited umask commonly produces) is safe and must not be rejected.
-  if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o022) !== 0) {
+  // mkdir(recursive) is not enough on its own: it returns success on a directory somebody else
+  // created and never re-applies the mode, so ownership has to be proven after the fact. Reads use
+  // the same predicate but degrade to "no record" — a write must fail loudly instead.
+  if (!(await stateDirIsPrivate(env))) {
     throw new CliError(
       `daemon state directory is not private: ${dir}`,
       EXIT.UNREACHABLE,
@@ -398,6 +415,9 @@ export async function ensureDaemon(
   for (let attempt = 0; attempt < MAX_LOCK_ATTEMPTS && Date.now() < deadline; attempt++) {
     const running = await reuseRunningDaemon(env, deadline)
     if (running) return running
+    // Re-check before spawning: the probes above can have consumed the budget, and spawning a
+    // detached backend only to SIGTERM it a moment later on a zero-length liveness wait is pure churn.
+    if (Date.now() >= deadline) break
     if (await acquireStateLock(env)) return await spawnAndRecord(env, deadline)
     const { state, followedPid } = await followWinner(env, deadline)
     if (state) return state
