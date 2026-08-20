@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -276,6 +277,13 @@ func writeDaemonState(socketPath, addr string) {
 		log.Printf("daemon state: %v", err)
 		return
 	}
+	// Do not claim a record that belongs to a DIFFERENT live backend. A second instance started on
+	// another PORT would otherwise rewrite goUrl and redirect every saki command to itself, and then
+	// delete the record on its own exit — orphaning the daemon that was there first.
+	if owner := recordedPID(path); owner != 0 && owner != os.Getpid() && processAlive(owner) {
+		log.Printf("daemon state: not claiming %s, already held by live pid %d", path, owner)
+		return
+	}
 	socket := any(nil)
 	if socketPath != "" {
 		socket = socketPath
@@ -305,18 +313,36 @@ func writeDaemonState(socketPath, addr string) {
 // orphan outcome 5.3 forbids, and the CLI already guards its own deletes the same way
 // (releaseState, src/daemon.ts).
 func removeOwnDaemonState() {
-	path := daemonStatePath()
+	if recordedPID(daemonStatePath()) != os.Getpid() {
+		return
+	}
+	_ = os.Remove(daemonStatePath())
+}
+
+// recordedPID is the pid the state file currently names, or 0 when there is no readable record.
+func recordedPID(path string) int {
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return
+		return 0
 	}
 	var state struct {
 		PID int `json:"pid"`
 	}
-	if err := json.Unmarshal(body, &state); err != nil || state.PID != os.Getpid() {
-		return
+	if err := json.Unmarshal(body, &state); err != nil || state.PID <= 0 {
+		return 0
 	}
-	_ = os.Remove(path)
+	return state.PID
+}
+
+// processAlive reports whether a pid exists. Signal 0 performs the permission and existence checks
+// without delivering anything; EPERM means it exists under another uid, which still counts as taken.
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, os.ErrPermission)
 }
 
 // selectProxy decides whether this backend runs STANDALONE or paired with apps/server.

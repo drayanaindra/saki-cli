@@ -20,16 +20,32 @@ export async function cmdBackend(ctx: Ctx, positionals: string[], flags: Record<
     emit(state, { json: ctx.json, human }, ctx.write)
     return EXIT.OK
   }
+  return status(ctx)
+}
+
+// §10 rule 4: status reports the state it FINDS, which means probing even when no state file exists.
+// A manually launched or pre-daemon backend owns the port without a record, and ensureDaemon already
+// treats that as running (pid 0) — reporting "not running" for a backend that is answering would be
+// the exact misreport this rule exists to prevent.
+async function status(ctx: Ctx): Promise<ExitCode> {
   const state = await readDaemonState(ctx.env)
-  const answer = state ? { pid: state.pid, healthy: Boolean(await ensureHealthy(state)), goUrl: state.goUrl, socketPath: state.socketPath } : { pid: null, healthy: false, goUrl: ctx.client.goUrl, socketPath: null }
-  emit(answer, { json: ctx.json, human: answer.healthy ? `backend healthy (pid ${answer.pid})` : 'backend not running' }, ctx.write)
+  const goUrl = state?.goUrl ?? ctx.client.goUrl
+  const healthy = await probeBackendHealth(goUrl)
+  const answer = {
+    pid: state?.pid ?? null,
+    healthy,
+    goUrl,
+    socketPath: state?.socketPath ?? null,
+  }
+  emit(answer, { json: ctx.json, human: humanStatus(answer) }, ctx.write)
   return EXIT.OK
 }
 
-// Bounded: `saki backend status` must answer even when the port is held by something that accepts
-// the connection and never replies, which an un-aborted fetch would wait ~300s for.
-async function ensureHealthy(state: { goUrl: string }): Promise<boolean> {
-  return probeBackendHealth(state.goUrl)
+function humanStatus(answer: { pid: number | null; healthy: boolean }): string {
+  if (!answer.healthy) return 'backend not running'
+  // An untracked-but-healthy backend is a real, reportable state: it is serving, we just did not
+  // start it, so there is no PID to name.
+  return answer.pid === null ? 'backend healthy (not daemon-tracked)' : `backend healthy (pid ${answer.pid})`
 }
 
 function fail(ctx: Ctx, message: string): ExitCode {

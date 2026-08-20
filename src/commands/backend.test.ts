@@ -110,21 +110,38 @@ describe('cmdBackend', () => {
     expect(JSON.parse(out[0])).toMatchObject({ pid: 42, healthy: false })
   })
 
-  it('reports healthy and unhealthy status states', async () => {
+  it('names the PID of a tracked healthy daemon', async () => {
     daemon.readDaemonState.mockResolvedValue(state)
     daemon.probeBackendHealth.mockResolvedValue(true)
-    const healthy = context(false)
-    await expect(cmdBackend(healthy.ctx, ['status'], {})).resolves.toBe(EXIT.OK)
-    expect(healthy.out).toEqual(['backend healthy (pid 42)'])
+    const { ctx, out } = context(false)
 
+    await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
+    expect(out).toEqual(['backend healthy (pid 42)'])
+  })
+
+  it('reports nothing running when there is no state and no answer', async () => {
     daemon.readDaemonState.mockResolvedValue(null)
-    const unavailable = context()
-    await expect(cmdBackend(unavailable.ctx, ['status'], {})).resolves.toBe(EXIT.OK)
-    expect(JSON.parse(unavailable.out[0])).toEqual({
+    daemon.probeBackendHealth.mockResolvedValue(false)
+    const { ctx, out } = context()
+
+    await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
+    expect(JSON.parse(out[0])).toEqual({
       pid: null,
       healthy: false,
-      goUrl: unavailable.ctx.client.goUrl,
+      goUrl: ctx.client.goUrl,
       socketPath: null,
     })
+  })
+
+  // §10 rule 4 — status reports the state it FINDS. A manually launched backend owns the port with
+  // no state record, and ensureDaemon already reuses it; calling that "not running" would be the
+  // exact misreport the rule exists to prevent.
+  it('reports an untracked backend that is answering as healthy', async () => {
+    daemon.readDaemonState.mockResolvedValue(null)
+    daemon.probeBackendHealth.mockResolvedValue(true)
+    const { ctx, out } = context(false)
+
+    await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
+    expect(out).toEqual(['backend healthy (not daemon-tracked)'])
   })
 })

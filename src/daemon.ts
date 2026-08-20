@@ -376,7 +376,9 @@ async function spawnAndRecord(env: DaemonEnv, deadline: number): Promise<DaemonS
   } catch (err) {
     // Reap the child we spawned. Dropping the state file while the process lives would leave an
     // orphan holding the port with nothing tracking its PID (outcome 5.3) — one per failed command.
-    if (child?.pid && isAlive(child.pid)) {
+    // The self-pid guard is defensive: a spawn helper that ever reported our OWN pid would otherwise
+    // make this line kill the CLI, and a stray SIGTERM is far worse than a leaked child.
+    if (child?.pid && child.pid !== process.pid && isAlive(child.pid)) {
       try { process.kill(child.pid, 'SIGTERM') } catch { /* exited between the probe and the signal */ }
     }
     await releaseState(env, owned)
