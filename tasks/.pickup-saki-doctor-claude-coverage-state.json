@@ -1,0 +1,10 @@
+{
+  "epic": "F4",
+  "slug": "saki-doctor-claude-coverage",
+  "title": "saki doctor — claude coverage",
+  "prd": "tasks/prd-saki-doctor-claude-coverage.md",
+  "phase": "proto-ready",
+  "started_at": 1787189182,
+  "prd_written": true,
+  "review": { "rounds": 1, "verdict": "SHIP", "readiness": "READY", "blockers_fixed": 2 }
+}

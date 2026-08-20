@@ -53,35 +53,41 @@ const engine = (over: Partial<EngineReport> = {}): EngineReport => ({
 describe('cmdDoctor', () => {
   it('both engines ok — exit 0', async () => {
     const { ctx } = routedCtx({
-      '/api/doctor': { body: { engines: [engine({ engine: 'codex' }), engine({ engine: 'opencode' })] } },
+      '/api/doctor': { body: { engines: [engine({ engine: 'codex' }), engine({ engine: 'opencode' }), engine({ engine: 'claude' })] } },
     })
     const code = await cmdDoctor(ctx, [], {})
     expect(code).toBe(EXIT.OK)
   })
 
-  it('codex failed — exit 1', async () => {
-    const { ctx } = routedCtx({
+  it('claude failed — exit 1 and report preserved', async () => {
+    const { ctx, out } = routedCtx({
       '/api/doctor': {
         body: {
           engines: [
-            engine({ engine: 'codex', status: 'failed', reason: 'not provisioned' }),
+            engine({ engine: 'codex' }),
             engine({ engine: 'opencode' }),
+            engine({ engine: 'claude', status: 'failed', reason: 'not provisioned' }),
           ],
         },
       },
-    })
+    }, true)
     const code = await cmdDoctor(ctx, [], {})
     expect(code).toBe(EXIT.ERROR)
+    expect(JSON.parse(out[0])).toEqual(expect.objectContaining({
+      engines: expect.arrayContaining([
+        expect.objectContaining({ engine: 'claude', status: 'failed', reason: 'not provisioned' }),
+      ]),
+    }))
   })
 
   it('--json shape', async () => {
     const { ctx, out } = routedCtx(
-      { '/api/doctor': { body: { engines: [engine({ engine: 'codex' }), engine({ engine: 'opencode' })] } } },
+      { '/api/doctor': { body: { engines: [engine({ engine: 'codex' }), engine({ engine: 'opencode' }), engine({ engine: 'claude' })] } } },
       true,
     )
     await cmdDoctor(ctx, [], {})
     const parsed = JSON.parse(out[0]) as { engines: EngineReport[] }
-    expect(parsed.engines).toHaveLength(2)
+    expect(parsed.engines).toHaveLength(3)
     for (const e of parsed.engines) {
       expect(Object.keys(e).sort()).toEqual(['engine', 'fix', 'profile', 'reason', 'status'])
     }
@@ -89,7 +95,7 @@ describe('cmdDoctor', () => {
 
   it('threads --profile as a query param', async () => {
     const { ctx, gets } = routedCtx({
-      '/api/doctor': { body: { engines: [engine({ engine: 'codex' }), engine({ engine: 'opencode' })] } },
+      '/api/doctor': { body: { engines: [engine({ engine: 'codex' }), engine({ engine: 'opencode' }), engine({ engine: 'claude' })] } },
     })
     await cmdDoctor(ctx, [], { profile: '/tmp/x' })
     const url = gets.find((u) => u.includes('/api/doctor'))

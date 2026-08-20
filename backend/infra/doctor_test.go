@@ -86,9 +86,19 @@ func TestDoctorService_Check_LeavesFilesystemUntouched(t *testing.T) {
 	profileDir := t.TempDir()
 	writeCodexProfile(t, profileDir, "")                 // an empty, unregistered config.toml
 	writeOpencodeProfile(t, profileDir, `{"plugin":[]}`) // a valid-JSON, plugin-less config
+	writeClaudeProfile(t, profileDir, `{"plugins":{}}`, `{"enabledPlugins":{}}`)
 
 	codexPath := filepath.Join(profileDir, "codex", "config.toml")
 	opencodePath := filepath.Join(profileDir, "opencode", "opencode.json")
+	claudeInstalledPath, claudeSettingsPath := claudeProfilePaths(&profileDir)
+	claudeInstalledBefore, err := os.ReadFile(claudeInstalledPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claudeSettingsBefore, err := os.ReadFile(claudeSettingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	codexBefore, err := os.ReadFile(codexPath)
 	if err != nil {
 		t.Fatal(err)
@@ -105,9 +115,21 @@ func TestDoctorService_Check_LeavesFilesystemUntouched(t *testing.T) {
 	// resolve" wording only appears in CodexSkillsProof/OpencodePluginProof's own error text, so its
 	// presence is direct proof the profile-reading code path actually ran, not just that Check failed.
 	for _, r := range reports {
-		if r.Status != "failed" || !strings.Contains(r.Reason, "does not resolve @saketek/saki-builder") {
+		if r.Status != "failed" || (r.Engine != string(domain.EngineClaude) && !strings.Contains(r.Reason, "does not resolve @saketek/saki-builder")) || (r.Engine == string(domain.EngineClaude) && !strings.Contains(r.Reason, "no supported installed plugin")) {
 			t.Fatalf("%s: want status=failed with a ProfileProof (not BinaryCheck) reason, got %+v", r.Engine, r)
 		}
+	}
+
+	claudeInstalledAfter, err := os.ReadFile(claudeInstalledPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claudeSettingsAfter, err := os.ReadFile(claudeSettingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(claudeInstalledBefore, claudeInstalledAfter) || !bytes.Equal(claudeSettingsBefore, claudeSettingsAfter) {
+		t.Fatal("Claude profile was mutated by a doctor run")
 	}
 
 	codexAfter, err := os.ReadFile(codexPath)

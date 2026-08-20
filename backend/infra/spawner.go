@@ -144,8 +144,7 @@ func (s *ShSpawner) Spawn(spec usecase.SpawnSpec) (int, func() int, error) {
 
 // preflight runs the engine's BEFORE-SPAWN refusals, so a run that cannot possibly work fails loudly
 // (→ the build path parks immediately) instead of no-opping on a clean exit and parking a build that
-// never started. claude (the default) has no preflight — its binary's absence already surfaces via the
-// durable exit code as today, and it resolves commands from the message with nothing to prove.
+// never started. Claude has no binary check, but its selected profile is proven before spawn.
 //
 // F2 slice 1: the binary-on-PATH and profile-proof halves are EngineBinaryCheck/EngineProfileProof
 // (below) — the SAME functions `saki doctor`'s pre-dispatch verdict calls (via infra.EngineProofChecker),
@@ -193,8 +192,8 @@ func EngineBinaryCheck(engine domain.RunEngine) error {
 }
 
 // EngineProfileProof proves the engine's profile resolves the saki-builder commands (NEVER a run exit
-// code — rule 4). claude has no proof yet (F4 — deferred; §11 non-goal for F2). Shared by preflight and
-// `saki doctor` — the SAME function, not a parallel copy that could drift.
+// code — rule 4). Shared by preflight and `saki doctor` — the SAME function, not a parallel copy that
+// could drift.
 func EngineProfileProof(engine domain.RunEngine, configDir *string) error {
 	switch engine {
 	case domain.EngineOpencode:
@@ -206,6 +205,8 @@ func EngineProfileProof(engine domain.RunEngine, configDir *string) error {
 		// just answers that it cannot find the command — so install state is proven by READING the
 		// home, never inferred from the run.
 		return CodexSkillsProof(configDir)
+	case domain.EngineClaude:
+		return ClaudeProfileProof(configDir)
 	default:
 		return nil
 	}

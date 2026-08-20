@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/drayanaindra/saki-cli/backend/domain"
@@ -11,22 +12,34 @@ import (
 	"github.com/drayanaindra/saki-cli/backend/usecase"
 )
 
-// fakeEngineProofs is the adapter-layer twin of usecase's own unexported fake — needed here because
-// usecase.DoctorService is a concrete struct (not an interface), so testing the HTTP handler in
-// isolation means injecting a fake EngineProofs, not a fake DoctorService.
 type fakeEngineProofs struct {
 	err           map[domain.RunEngine]error
 	lastConfigDir *string
+	profileCalls  int
 }
 
 func (f *fakeEngineProofs) BinaryCheck(domain.RunEngine) error { return nil }
 func (f *fakeEngineProofs) ProfileProof(engine domain.RunEngine, configDir *string) error {
 	f.lastConfigDir = configDir
+	f.profileCalls++
 	return f.err[engine]
 }
 
 func doctorHandlerFor(f usecase.EngineProofs) Handler {
 	return Handler{doctor: usecase.NewDoctorService(f)}
+}
+
+func assertDoctorEngines(t *testing.T, engines []domain.EngineReport) {
+	t.Helper()
+	if len(engines) != 3 {
+		t.Fatalf("engines = %+v, want 3 entries", engines)
+	}
+	want := []string{"codex", "opencode", "claude"}
+	for i, engine := range engines {
+		if engine.Engine != want[i] {
+			t.Errorf("engines[%d].Engine = %q, want %q", i, engine.Engine, want[i])
+		}
+	}
 }
 
 func TestDoctorHandler_ReturnsEngines(t *testing.T) {
@@ -48,8 +61,9 @@ func TestDoctorHandler_ReturnsEngines(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Engines) != 2 {
-		t.Fatalf("engines = %+v, want 2 entries", body.Engines)
+	assertDoctorEngines(t, body.Engines)
+	if f.profileCalls != 3 {
+		t.Fatalf("profile calls = %d, want 3", f.profileCalls)
 	}
 
 	res2, err := http.Get(srv.URL + "/api/doctor?profile=/tmp/x")
@@ -62,14 +76,9 @@ func TestDoctorHandler_ReturnsEngines(t *testing.T) {
 	}
 }
 
-// F2 slice 1 step 7's own gate (QA-mandated): proves main.go's ACTUAL production construction —
-// NewHandler(..., usecase.NewDoctorService(infra.EngineProofChecker{})) — actually works end to end.
-// Nothing else in this suite goes through the production constructor; the other doctor tests and every
-// unrelated NewHandler call site inject a fake or the zero-value DoctorService. A DoctorService{}
-// zero-value accidentally pasted into main.go would compile fine everywhere else and panic on the
-// first real `saki doctor` call (a nil EngineProofs) — this is the one test that would catch it.
 func TestDoctorHandler_RealWiring(t *testing.T) {
-	t.Setenv("PATH", t.TempDir()) // neither codex nor opencode on PATH -> a real, deterministic failure
+	t.Setenv("PATH", t.TempDir())
+	profileDir := t.TempDir()
 
 	h := NewHandler(
 		usecase.NewBranchService(fakeBranchReader{}), usecase.RunService{}, nil,
@@ -82,7 +91,7 @@ func TestDoctorHandler_RealWiring(t *testing.T) {
 	srv := httptest.NewServer(h.Routes())
 	defer srv.Close()
 
-	res, err := http.Get(srv.URL + "/api/doctor")
+	res, err := http.Get(srv.URL + "/api/doctor?profile=" + url.QueryEscape(profileDir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,16 +105,15 @@ func TestDoctorHandler_RealWiring(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Engines) != 2 || body.Engines[0].Status != "failed" {
-		t.Fatalf("engines = %+v, want 2 entries with codex failed (binary missing)", body.Engines)
+	assertDoctorEngines(t, body.Engines)
+	if body.Engines[0].Status != "failed" || body.Engines[1].Status != "failed" || body.Engines[2].Status != "failed" {
+		t.Fatalf("engines = %+v, want all three reports failed for missing profiles/binaries", body.Engines)
 	}
 }
 
-// F2 slice 2, criterion 2.4 — /api/doctor was mounted OriginGuard-wrapped in slice 1
-// (backend/adapter/http.go:97), but slice 1 wrote no dedicated regression test for THIS route. Same
-// pattern as the existing git-write regression (backend/adapter/http_test.go:556-569).
 func TestDoctorHandler_RejectsNonLoopbackHost(t *testing.T) {
-	mux := doctorHandlerFor(&fakeEngineProofs{}).Routes()
+	f := &fakeEngineProofs{}
+	mux := doctorHandlerFor(f).Routes()
 	req := httptest.NewRequest(http.MethodGet, "/api/doctor", nil)
 	req.Host = "evil.com"
 	rec := httptest.NewRecorder()
@@ -114,5 +122,8 @@ func TestDoctorHandler_RejectsNonLoopbackHost(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("doctor route want 403 on non-loopback host, got %d", rec.Code)
+	}
+	if f.profileCalls != 0 {
+		t.Fatalf("profile calls = %d, want 0 for rejected request", f.profileCalls)
 	}
 }

@@ -1,0 +1,7 @@
+{
+  "slug": "saki-doctor-claude-coverage",
+  "prd": "tasks/prd-saki-doctor-claude-coverage.md",
+  "phase": "green",
+  "started_at": 1787189182,
+  "review": { "rounds": 1, "verdict": "SHIP", "readiness": "READY", "blockers_fixed": 2 }
+}

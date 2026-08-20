@@ -33,8 +33,8 @@ func TestDoctorService_Check(t *testing.T) {
 	t.Run("both engines ok", func(t *testing.T) {
 		f := &fakeEngineProofs{}
 		reports := NewDoctorService(f).Check(nil)
-		if len(reports) != 2 {
-			t.Fatalf("want 2 reports, got %d", len(reports))
+		if len(reports) != 3 {
+			t.Fatalf("want 3 reports, got %d", len(reports))
 		}
 		for _, r := range reports {
 			if r.Status != "ok" {
@@ -60,8 +60,8 @@ func TestDoctorService_Check(t *testing.T) {
 	t.Run("exactly codex then opencode, all fields present", func(t *testing.T) {
 		f := &fakeEngineProofs{}
 		reports := NewDoctorService(f).Check(nil)
-		if reports[0].Engine != string(domain.EngineCodex) || reports[1].Engine != string(domain.EngineOpencode) {
-			t.Fatalf("order = [%s, %s], want [codex, opencode]", reports[0].Engine, reports[1].Engine)
+		if reports[0].Engine != string(domain.EngineCodex) || reports[1].Engine != string(domain.EngineOpencode) || reports[2].Engine != string(domain.EngineClaude) {
+			t.Fatalf("order = [%s, %s, %s], want [codex, opencode, claude]", reports[0].Engine, reports[1].Engine, reports[2].Engine)
 		}
 		for _, r := range reports {
 			if r.Profile == "" {
@@ -73,8 +73,8 @@ func TestDoctorService_Check(t *testing.T) {
 	t.Run("no side effects beyond BinaryCheck/ProfileProof", func(t *testing.T) {
 		f := &fakeEngineProofs{}
 		NewDoctorService(f).Check(nil)
-		if len(f.binaryCalls) != 2 || len(f.profileCalls) != 2 {
-			t.Fatalf("binaryCalls=%v profileCalls=%v — want exactly 2 of each (one per reported engine)", f.binaryCalls, f.profileCalls)
+		if len(f.binaryCalls) != 3 || len(f.profileCalls) != 3 {
+			t.Fatalf("binaryCalls=%v profileCalls=%v — want exactly 3 of each (one per reported engine)", f.binaryCalls, f.profileCalls)
 		}
 	})
 
@@ -140,6 +140,23 @@ func TestDoctorService_Check(t *testing.T) {
 			t.Errorf("opencode.Fix = %q, want %q — doctor names the same command init-env runs (slice 2)", opencode.Fix, OpencodeInstallFix)
 		}
 	})
+}
+
+func TestDoctorService_Check_ClaudeFailure(t *testing.T) {
+	f := &fakeEngineProofs{profileErr: map[domain.RunEngine]error{
+		domain.EngineClaude: errors.New("claude profile does not resolve saki-builder"),
+	}}
+	reports := NewDoctorService(f).Check(nil)
+	if len(reports) != 3 {
+		t.Fatalf("want 3 reports, got %d", len(reports))
+	}
+	claude := reports[2]
+	if claude.Engine != string(domain.EngineClaude) || claude.Status != "failed" || claude.Reason != "claude profile does not resolve saki-builder" {
+		t.Errorf("claude = %+v, want failed proof report", claude)
+	}
+	if claude.Fix != "" {
+		t.Errorf("claude.Fix = %q, want empty", claude.Fix)
+	}
 }
 
 // F2 slice 2, criterion 2.3's own wording: "the test fails if either drifts from the script". Neither

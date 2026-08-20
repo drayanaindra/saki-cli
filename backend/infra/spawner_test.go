@@ -23,12 +23,31 @@ func writeFakeSh(t *testing.T, exitCode string) string {
 	return p
 }
 
+func claudeProvenProfile(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeClaudeProfile(t, dir,
+		`{"plugins":{"saketek@saki-builder":[{"version":"0.5.0"}]}}`,
+		`{"enabledPlugins":{"saketek@saki-builder":true}}`,
+	)
+	return dir
+}
+
+func claudeSpawnSpec(t *testing.T, spec usecase.SpawnSpec) usecase.SpawnSpec {
+	t.Helper()
+	if spec.ConfigDir == nil {
+		dir := claudeProvenProfile(t)
+		spec.ConfigDir = &dir
+	}
+	return spec
+}
+
 func TestShSpawner_SpawnsAndFinalizes(t *testing.T) {
 	j := NewFileJournal(t.TempDir())
 	sp := NewShSpawner(j)
 	sp.sh = writeFakeSh(t, "0")
 
-	pid, wait, err := sp.Spawn(usecase.SpawnSpec{ID: "r1", Prompt: "hi", Kind: "generate"})
+	pid, wait, err := sp.Spawn(claudeSpawnSpec(t, usecase.SpawnSpec{ID: "r1", Prompt: "hi", Kind: "generate"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +70,7 @@ func TestShSpawner_NonZeroExit(t *testing.T) {
 	j := NewFileJournal(t.TempDir())
 	sp := NewShSpawner(j)
 	sp.sh = writeFakeSh(t, "127")
-	_, wait, err := sp.Spawn(usecase.SpawnSpec{ID: "r2", Prompt: "x"})
+	_, wait, err := sp.Spawn(claudeSpawnSpec(t, usecase.SpawnSpec{ID: "r2", Prompt: "x"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +372,7 @@ func TestSpawn_ClaudeNeverRefusesAnUnresolvableSlashPrompt(t *testing.T) {
 	j := NewFileJournal(t.TempDir())
 	sp := NewShSpawner(j)
 	sp.sh = writeFakeSh(t, "0")
-	if _, _, err := sp.Spawn(usecase.SpawnSpec{ID: "r11", Prompt: "/saki-builder:build, then do X", Kind: "build"}); err != nil {
+	if _, _, err := sp.Spawn(claudeSpawnSpec(t, usecase.SpawnSpec{ID: "r11", Prompt: "/saki-builder:build, then do X", Kind: "build"})); err != nil {
 		t.Fatalf("claude must be unaffected by the opencode command-split refusal, got %v", err)
 	}
 }
@@ -497,7 +516,7 @@ func TestSpawn_ClaudeIgnoresOpencodeBinaryCheck(t *testing.T) {
 	sp := NewShSpawner(j)
 	sp.sh = writeFakeSh(t, "0")
 	t.Setenv("PATH", t.TempDir()) // no claude/opencoide on PATH — but the fake sh short-circuits the real one
-	pid, wait, err := sp.Spawn(usecase.SpawnSpec{ID: "r2", Prompt: "x", Engine: ""})
+	pid, wait, err := sp.Spawn(claudeSpawnSpec(t, usecase.SpawnSpec{ID: "r2", Prompt: "x", Engine: ""}))
 	if err != nil {
 		t.Fatalf("claude default must spawn regardless of PATH: %v", err)
 	}

@@ -2,10 +2,8 @@ package usecase
 
 import "github.com/drayanaindra/saki-cli/backend/domain"
 
-// DoctorEngines is the FIXED, slice-1-scoped set of engines `saki doctor` reports on — NOT
-// domain.RunEngine's full enum, which also has claude (deferred to F4). Order is the JSON order
-// criterion 1.3 pins.
-var DoctorEngines = []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode}
+// DoctorEngines is the FIXED ordered set of engines `saki doctor` reports on.
+var DoctorEngines = []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode, domain.EngineClaude}
 
 // CodexInstallFix is codex's complete two-line remediation — the SAME text infra.CodexSkillsProof
 // embeds in its spawn-refusal error (backend/infra/codex.go), so the operator-facing error and
