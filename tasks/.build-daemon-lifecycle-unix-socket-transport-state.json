@@ -3,9 +3,11 @@
   "branch": "feature/daemon-lifecycle-unix-socket-transport",
   "commitPolicy": "per-step",
   "slices": [
-    {"n":1,"title":"Auto-start on first command (walking skeleton)","status":"in-progress","steps":{"rplan":{"status":"done","artifact":"tasks/daemon-lifecycle-unix-socket-transport-slice1-plan.md"},"approved":{"status":"done"},"qa":{"status":"pending"},"reviewer":{"status":"pending"},"security":{"status":"n/a"}}},
-    {"n":2,"title":"PID tracking + stale-state cleanup","status":"not-started","steps":{"rplan":{"status":"pending"},"approved":{"status":"pending"},"qa":{"status":"pending"},"reviewer":{"status":"pending"},"security":{"status":"n/a"}}},
-    {"n":3,"title":"saki backend start|stop|status explicit commands","status":"not-started","steps":{"rplan":{"status":"pending"},"approved":{"status":"pending"},"qa":{"status":"pending"},"reviewer":{"status":"pending"},"security":{"status":"n/a"}}},
-    {"n":4,"title":"Unix socket transport","status":"not-started","steps":{"rplan":{"status":"pending"},"approved":{"status":"pending"},"qa":{"status":"pending"},"reviewer":{"status":"pending"},"security":{"status":"pending"}}}
-  ]
+    {"n":1,"title":"Auto-start on first command (walking skeleton)","status":"done","steps":{"rplan":{"status":"done","artifact":"tasks/daemon-lifecycle-unix-socket-transport-slice1-plan.md"},"approved":{"status":"done","commit":"b54f4f6da6748400f3d08824ef84b24684b855ed"},"qa":{"status":"done"},"reviewer":{"status":"done"},"security":{"status":"n/a"}}},
+    {"n":2,"title":"PID tracking + stale-state cleanup","status":"done","steps":{"rplan":{"status":"done","artifact":"tasks/daemon-lifecycle-unix-socket-transport-slice2-plan.md"},"approved":{"status":"done","commit":"3d311b4"},"qa":{"status":"done"},"reviewer":{"status":"done"},"security":{"status":"done"}}},
+    {"n":3,"title":"saki backend start|stop|status explicit commands","status":"done","steps":{"rplan":{"status":"n/a"},"approved":{"status":"done","commit":"edfc2e5"},"qa":{"status":"done"},"reviewer":{"status":"done"},"security":{"status":"done"}}},
+    {"n":4,"title":"Unix socket transport","status":"done","steps":{"rplan":{"status":"n/a"},"approved":{"status":"done","commit":"addbb7c"},"qa":{"status":"done"},"reviewer":{"status":"done"},"security":{"status":"done"}}}
+  ],
+  "e2e": {"status":"partial","passed":7,"total":8,"blocked":"e2e/opencode-spawn.spec.ts does not terminate in this environment (real opencode model turn); does not exercise any path this PRD changes"},
+  "manual": ["AC 3.5 — stop/start rehydrates an in-flight run (needs a real building run)"]
 }
