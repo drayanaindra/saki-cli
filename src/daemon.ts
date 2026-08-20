@@ -23,6 +23,12 @@ export interface DaemonEnv {
 const DEFAULT_GO_URL = 'http://127.0.0.1:8788'
 const DEFAULT_TIMEOUT_MS = 10_000
 const STATE_NAME = 'backend.state.json'
+// Spawn-lock timings. The loser waits LOCK_POLL_TRIES × LOCK_POLL_MS (1 s) for the winner's real PID
+// to replace the sentinel, then follows that PID for the liveness budget. MAX_LOCK_ATTEMPTS bounds the
+// reclaim loop so a contended lock can never turn into an unbounded respawn.
+const LOCK_POLL_MS = 100
+const LOCK_POLL_TRIES = 10
+const MAX_LOCK_ATTEMPTS = 3
 
 export function daemonStateDir(env: DaemonEnv = process.env): string {
   const uid = userInfo().uid ?? process.getuid?.() ?? 0
@@ -183,37 +189,60 @@ async function goHealthy(goUrl: string): Promise<boolean> {
   }
 }
 
-export async function ensureDaemon(env: DaemonEnv = process.env): Promise<DaemonState> {
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// Reuse a daemon that is already serving, or clear the state that proves one is not.
+//
+// Returns `pid: 0` for a backend that owns the TCP port without a state file — a manually launched or
+// older daemon. Spawning a second process there would lose the port bind while a superficial health
+// probe went green against the FIRST one.
+async function reuseRunningDaemon(env: DaemonEnv): Promise<DaemonState | null> {
   const existing = await readDaemonState(env)
   if (existing && await healthy(existing)) return existing
   if (existing) await removeDaemonState(env)
   else if (existsSync(daemonStatePath(env)) && !(await stateIsLock(env))) await removeDaemonState(env)
   const goUrl = env.SAKI_BACKEND_URL ?? DEFAULT_GO_URL
-  // A manually launched or older daemon may already own the TCP port without a state file. Reuse it
-  // instead of spawning a second process that fails to bind while a superficial health probe goes green.
   if (await goHealthy(goUrl)) return { pid: 0, socketPath: null, goUrl }
+  return null
+}
 
-  const winner = await acquireStateLock(env)
-  if (!winner) {
-    for (let i = 0; i < 10; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      const state = await readDaemonState(env)
-      if (state && state.pid > 0) {
-        if (await healthy(state)) return state
-        await removeDaemonState(env)
-        break
-      }
-    }
-    await removeDaemonState(env)
-    return ensureDaemon(env)
+// Loser path of the spawn lock: wait on the invocation that won it instead of racing a second daemon
+// into the same port (🔒 INVARIANT 2 — at most one saki-backend per UID).
+//
+// A live winner that is not yet answering is BOOTING, not stale: the CLI records the child PID
+// immediately after spawn while the Go process still has to bind its listeners, so the first health
+// probe legitimately fails. Only a winner whose PID is gone, or one that never serves inside the
+// liveness budget, releases the lock back to this caller (null → reclaim).
+async function followWinner(env: DaemonEnv): Promise<DaemonState | null> {
+  let state: DaemonState | null = null
+  for (let i = 0; i < LOCK_POLL_TRIES && !state; i++) {
+    await delay(LOCK_POLL_MS)
+    state = await readDaemonState(env)
   }
+  if (!state) return null
+  const deadline = Date.now() + DEFAULT_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    if (await healthy(state)) return (await readDaemonState(env)) ?? state
+    if (!isAlive(state.pid)) return null
+    await delay(LOCK_POLL_MS)
+  }
+  return null
+}
 
+// Winner path of the spawn lock. The claimed state file is removed on every failure so the lock is
+// never left held by an invocation that is about to exit.
+async function spawnAndRecord(env: DaemonEnv): Promise<DaemonState> {
+  const goUrl = env.SAKI_BACKEND_URL ?? DEFAULT_GO_URL
   try {
     const child = await spawnDaemon(env)
     if (!child.pid) throw new CliError('saki-backend did not report a PID', EXIT.UNREACHABLE)
     await writeState({ pid: child.pid, socketPath: null, goUrl }, env)
     await waitForLiveness(goUrl)
     if (!isAlive(child.pid)) throw new CliError('saki-backend exited before startup completed', EXIT.UNREACHABLE)
+    // Re-read rather than reuse the write above: the Go process rewrites the same file once its
+    // listeners are up, and that copy is the one carrying socketPath.
     const state = await readDaemonState(env)
     if (!state || state.pid !== child.pid) throw new CliError('saki-backend startup was not recorded', EXIT.UNREACHABLE)
     return state
@@ -221,6 +250,24 @@ export async function ensureDaemon(env: DaemonEnv = process.env): Promise<Daemon
     await removeDaemonState(env)
     throw err
   }
+}
+
+export async function ensureDaemon(env: DaemonEnv = process.env): Promise<DaemonState> {
+  // Bounded, not recursive: a contended lock must converge on one daemon or fail loudly. An unbounded
+  // retry here is the runaway-spawn failure mode this whole lock exists to prevent.
+  for (let attempt = 0; attempt < MAX_LOCK_ATTEMPTS; attempt++) {
+    const running = await reuseRunningDaemon(env)
+    if (running) return running
+    if (await acquireStateLock(env)) return await spawnAndRecord(env)
+    const followed = await followWinner(env)
+    if (followed) return followed
+    await removeDaemonState(env)
+  }
+  throw new CliError(
+    'saki-backend could not be started: spawn lock stayed contended',
+    EXIT.UNREACHABLE,
+    'inspect the daemon state file with `saki backend status --json`',
+  )
 }
 
 export async function stopDaemon(env: DaemonEnv = process.env): Promise<'not-running' | 'stopped'> {
