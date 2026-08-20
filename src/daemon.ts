@@ -96,23 +96,28 @@ export function socketFetch(socketPath: string): typeof fetch {
   }) as unknown as typeof fetch
 }
 
-function spawnDaemon(env: DaemonEnv = process.env): ChildProcess {
+async function spawnDaemon(env: DaemonEnv = process.env): Promise<ChildProcess> {
   const binary = binaryPath(env)
   if (!binary) throw new CliError('saki-backend binary not found', EXIT.UNREACHABLE, 'run npm run backend:build')
-  try {
-    const child = spawn(binary, [], {
-      detached: true,
-      stdio: 'ignore',
-      env: { ...process.env, ...env, SAKI_DAEMON_STATE_PATH: daemonStatePath(env) },
-    })
-    child.unref()
-    return child
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+
+  const child = spawn(binary, [], {
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, ...env, SAKI_DAEMON_STATE_PATH: daemonStatePath(env) },
+  })
+  child.unref()
+
+  await new Promise<void>((resolve, reject) => {
+    child.once('spawn', resolve)
+    child.once('error', reject)
+  }).catch((err) => {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
       throw new CliError('saki-backend binary not found', EXIT.UNREACHABLE, 'run npm run backend:build')
     }
     throw new CliError(`failed to start saki-backend: ${err instanceof Error ? err.message : String(err)}`, EXIT.UNREACHABLE)
-  }
+  })
+  return child
 }
 
 async function writeState(state: DaemonState, env: DaemonEnv): Promise<void> {
@@ -191,7 +196,7 @@ export async function ensureDaemon(env: DaemonEnv = process.env): Promise<Daemon
   }
 
   try {
-    const child = spawnDaemon(env)
+    const child = await spawnDaemon(env)
     if (!child.pid) throw new CliError('saki-backend did not report a PID', EXIT.UNREACHABLE)
     await writeState({ pid: child.pid, socketPath: null, goUrl }, env)
     await waitForLiveness(goUrl)
