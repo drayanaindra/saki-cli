@@ -186,7 +186,9 @@ func main() {
 		_ = os.Remove(socketPath)
 	}
 	_ = tcp.Close()
-	_ = os.Remove(daemonStatePath())
+	// §10 rule 6: this cleanup runs in the handler BODY, never via defer — defer does not execute
+	// through os.Exit.
+	removeOwnDaemonState()
 	os.Exit(0)
 }
 
@@ -219,13 +221,18 @@ func listenUnix(socketPath string) (net.Listener, string, error) {
 	if limit := unixSocketLimit(); len([]byte(socketPath)) > limit {
 		return nil, "", fmt.Errorf("path too long (%d > %d): %s", len([]byte(socketPath)), limit, socketPath)
 	}
-	if err := os.MkdirAll(filepath.Dir(socketPath), 0o700); err != nil {
+	if err := ensurePrivateDir(filepath.Dir(socketPath)); err != nil {
 		return nil, "", err
 	}
 	if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
 		return nil, "", err
 	}
+	// Bind under a private umask so the inode is never even transiently group/other-connectable. The
+	// Chmod below is the guarantee, but between bind and Chmod the mode is 0777 &^ umask — under a
+	// permissive umask (0002/0000, seen in CI images) that window is genuinely connectable.
+	restore := syscall.Umask(0o077)
 	listener, err := net.Listen("unix", socketPath)
+	syscall.Umask(restore)
 	if err != nil {
 		return nil, "", err
 	}
@@ -237,6 +244,32 @@ func listenUnix(socketPath string) (net.Listener, string, error) {
 	return listener, socketPath, nil
 }
 
+// ensurePrivateDir creates the UID-scoped state directory and proves this user exclusively owns it.
+//
+// MkdirAll returns nil on a directory that ALREADY exists and never re-applies the mode, so on a host
+// whose TempDir is the shared /tmp another local user can create $TMPDIR/saki-<uid> first and own it
+// permanently. Everything the CLI trusts about the daemon is a file in here — the socket it dials and
+// the PID it signals — so an unowned directory is a hijack of the whole channel, not a tidiness issue.
+func ensurePrivateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	// Lstat, not Stat: a symlink planted at this path satisfies MkdirAll and would redirect every
+	// write below it. Under Lstat a symlink is not a directory, so the check below rejects it.
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	// Group/other WRITE is the hijack bit — planting a state file or a socket needs write on the
+	// directory. Read/traverse is not the threat: the records inside are 0600, so a 0755 directory
+	// (what an inherited umask commonly produces) is safe and must not be rejected.
+	if !info.IsDir() || !ok || int(stat.Uid) != os.Getuid() || info.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("daemon state directory is not private: %s", dir)
+	}
+	return nil
+}
+
 func unixSocketLimit() int {
 	if runtime.GOOS == "darwin" {
 		return 103
@@ -246,7 +279,10 @@ func unixSocketLimit() int {
 
 func writeDaemonState(socketPath, addr string) {
 	path := daemonStatePath()
-	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
+		log.Printf("daemon state: %v", err)
+		return
+	}
 	socket := any(nil)
 	if socketPath != "" {
 		socket = socketPath
@@ -256,9 +292,38 @@ func writeDaemonState(socketPath, addr string) {
 		log.Printf("daemon state: %v", err)
 		return
 	}
-	if err := os.WriteFile(path, body, 0o600); err != nil {
+	// O_NOFOLLOW: os.WriteFile follows a symlink at this path and would truncate its target as this
+	// user. The state dir check above makes that unreachable; this makes it impossible.
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		log.Printf("daemon state: %v", err)
+		return
+	}
+	defer file.Close()
+	if _, err := file.Write(body); err != nil {
 		log.Printf("daemon state: %v", err)
 	}
+}
+
+// removeOwnDaemonState deletes the state file only while it still describes THIS process.
+//
+// An unconditional Remove at shutdown drops whichever record is on disk — including a successor
+// daemon's, which leaves a live backend holding the port with nothing tracking its PID. That is the
+// orphan outcome 5.3 forbids, and the CLI already guards its own deletes the same way
+// (releaseState, src/daemon.ts).
+func removeOwnDaemonState() {
+	path := daemonStatePath()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var state struct {
+		PID int `json:"pid"`
+	}
+	if err := json.Unmarshal(body, &state); err != nil || state.PID != os.Getpid() {
+		return
+	}
+	_ = os.Remove(path)
 }
 
 // selectProxy decides whether this backend runs STANDALONE or paired with apps/server.

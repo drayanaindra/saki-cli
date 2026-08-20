@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, utimes, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdtemp, readFile, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { daemonStatePath, ensureDaemon, readDaemonState } from './daemon.js'
@@ -215,6 +215,34 @@ describe('ensureDaemon PID tracking and stale-state cleanup', () => {
     expect(childProcess.spawn).toHaveBeenCalledTimes(1)
   })
 
+  // Security: the state dir sits in a shared temp root. mkdir(recursive) succeeds on a directory
+  // someone else already owns and never re-applies the mode, so ownership has to be proven, not
+  // assumed — everything the CLI trusts (socketPath to dial, PID to signal) is a file inside it.
+  it('refuses a state directory this user does not exclusively own', async () => {
+    const dir = await stateDir()
+    await chmod(dir, 0o777)
+    stubBackend()
+
+    await expect(ensureDaemon({ SAKI_DAEMON_STATE_DIR: dir })).rejects.toMatchObject({ code: 3 })
+    expect(childProcess.spawn).not.toHaveBeenCalled()
+  })
+
+  // Security: a symlink planted at the state path must be UNLINKED, never written through — a plain
+  // 'w' open follows it and would truncate whatever it points at, as this user.
+  it('replaces a symlink planted at the state path without writing through it', async () => {
+    const dir = await stateDir()
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    const victim = join(dir, 'victim.txt')
+    await writeFile(victim, 'precious')
+    await symlink(victim, daemonStatePath(env))
+    const gate = stubBackend()
+    stubSpawn(gate)
+
+    await expect(ensureDaemon(env)).resolves.toMatchObject({ pid: process.pid })
+    await expect(readFile(victim, 'utf8')).resolves.toBe('precious')
+    await expect(lstat(daemonStatePath(env)).then((s) => s.isSymbolicLink())).resolves.toBe(false)
+  })
+
   // Outcome 5.5 — the whole call honours ONE wall-clock budget, so a contended lock cannot turn
   // three bounded attempts into a multiple-of-the-budget hang.
   it('gives up inside its budget when the lock stays contended', async () => {
@@ -237,7 +265,9 @@ describe('ensureDaemon PID tracking and stale-state cleanup', () => {
     } finally {
       clearInterval(contend)
     }
-    expect(Date.now() - started).toBeLessThan(3_000)
+    // Just above the injected budget: a regression to a PER-ATTEMPT budget would be
+    // MAX_LOCK_ATTEMPTS x 400ms = 1200ms and must fail here, so the bound has to be tighter than that.
+    expect(Date.now() - started).toBeLessThan(1_100)
   })
 
   // PRD §8 Slice 2, loser path: "If PID never appears (winner crashed pre-write): delete state file,

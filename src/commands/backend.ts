@@ -1,7 +1,7 @@
 import { emit } from '../output.js'
 import { EXIT, type ExitCode } from '../exit.js'
 import type { Ctx } from '../ctx.js'
-import { ensureDaemon, readDaemonState, stopDaemon } from '../daemon.js'
+import { ensureDaemon, probeBackendHealth, readDaemonState, stopDaemon } from '../daemon.js'
 
 export async function cmdBackend(ctx: Ctx, positionals: string[], flags: Record<string, string | boolean>): Promise<ExitCode> {
   const action = positionals[0]
@@ -39,13 +39,10 @@ export async function cmdBackend(ctx: Ctx, positionals: string[], flags: Record<
   return EXIT.OK
 }
 
+// Bounded: `saki backend status` must answer even when the port is held by something that accepts
+// the connection and never replies, which an un-aborted fetch would wait ~300s for.
 async function ensureHealthy(state: { goUrl: string }): Promise<boolean> {
-  try {
-    const res = await fetch(`${state.goUrl}/api/health`, { signal: AbortSignal.timeout(3_000) })
-    return res.ok && (await res.json() as { ok?: boolean }).ok === true
-  } catch {
-    return false
-  }
+  return probeBackendHealth(state.goUrl)
 }
 
 function fail(ctx: Ctx, message: string): ExitCode {

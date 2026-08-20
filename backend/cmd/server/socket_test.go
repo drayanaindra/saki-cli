@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -154,6 +155,85 @@ func TestListenUnix_HealthRespondsWithinBudget(t *testing.T) {
 	defer res.Body.Close()
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
 		t.Fatalf("health over unix socket took %v, want <= 3s", elapsed)
+	}
+}
+
+// Security: the state directory lives in a shared temp root, so MkdirAll succeeding proves nothing —
+// it returns nil on a directory another user already owns and never re-applies the mode. Everything
+// the CLI trusts about the daemon comes out of a file in here, so an unowned directory is a hijack of
+// the whole channel.
+func TestEnsurePrivateDir_RejectsAWorldWritableDir(t *testing.T) {
+	skipOnWindows(t)
+	dir := filepath.Join(shortTempDir(t), "state")
+	if err := os.MkdirAll(dir, 0o777); err != nil {
+		t.Fatalf("seed dir: %v", err)
+	}
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatalf("chmod dir: %v", err)
+	}
+
+	if err := ensurePrivateDir(dir); err == nil {
+		t.Fatal("ensurePrivateDir accepted a world-writable directory, want an error")
+	}
+}
+
+// A symlink satisfies MkdirAll and would redirect every write below it, so the check must Lstat.
+func TestEnsurePrivateDir_RejectsASymlink(t *testing.T) {
+	skipOnWindows(t)
+	root := shortTempDir(t)
+	real := filepath.Join(root, "real")
+	link := filepath.Join(root, "link")
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		t.Fatalf("seed dir: %v", err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("seed symlink: %v", err)
+	}
+
+	if err := ensurePrivateDir(link); err == nil {
+		t.Fatal("ensurePrivateDir accepted a symlinked directory, want an error")
+	}
+}
+
+func TestEnsurePrivateDir_AcceptsAndCreatesAnOwnedDir(t *testing.T) {
+	skipOnWindows(t)
+	dir := filepath.Join(shortTempDir(t), "state")
+
+	if err := ensurePrivateDir(dir); err != nil {
+		t.Fatalf("ensurePrivateDir(%q) = %v, want success", dir, err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Fatalf("created dir permissions = %#o, want no group/other access", perm)
+	}
+}
+
+// §10 rule 6 + outcome 5.3: shutdown must drop only THIS process's record. An unconditional Remove
+// deletes a successor daemon's state, orphaning a live backend with nothing tracking its PID.
+func TestRemoveOwnDaemonState_OnlyDeletesItsOwnRecord(t *testing.T) {
+	dir := shortTempDir(t)
+	path := filepath.Join(dir, "backend.state.json")
+	t.Setenv("SAKI_DAEMON_STATE_PATH", path)
+
+	successor := []byte(`{"pid":999999,"socketPath":null,"goUrl":"http://127.0.0.1:8788"}`)
+	if err := os.WriteFile(path, successor, 0o600); err != nil {
+		t.Fatalf("seed successor state: %v", err)
+	}
+	removeOwnDaemonState()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("removeOwnDaemonState deleted another daemon's record: %v", err)
+	}
+
+	own := []byte(fmt.Sprintf(`{"pid":%d,"socketPath":null,"goUrl":"http://127.0.0.1:8788"}`, os.Getpid()))
+	if err := os.WriteFile(path, own, 0o600); err != nil {
+		t.Fatalf("seed own state: %v", err)
+	}
+	removeOwnDaemonState()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("removeOwnDaemonState left its own record behind (err %v)", err)
 	}
 }
 
