@@ -158,7 +158,7 @@ rejects `--json` as an unknown flag.
 
 ```bash
 saki status                                  # is the backend (and, if configured, the studio) up
-saki backend start|stop|status               # manage the lazily-spawned backend daemon
+saki backend start|stop|status               # manage the lazily-spawned Go backend daemon
 saki mcp                                     # start an MCP server exposing journey commands as typed tools
 saki doctor [--profile <dir>]                # can each engine run a saki-builder command, before you dispatch
 saki init-env --engine <e> [--profile <dir>] # provision ONE engine profile, then prove it
@@ -200,6 +200,34 @@ through the same `startRun` code path so the two forms never drift in argument h
 deliberately absent from the alias list — `saki proto <id>` already means "print the URL of an
 already-rendered gallery", and one name can't mean both that and "render one". Only `wrap` accepts
 `--heal`; passing it to any other verb is a usage error, not a silent no-op.
+
+### `saki backend` — the daemon behind every other command
+
+Every command except `saki backend *` runs a pre-flight health check first and, if the Go backend
+isn't answering, starts it: `saki-backend` is spawned detached, tracked by a UID-scoped state file at
+`$TMPDIR/saki-<uid>/backend.state.json`, and reused by later invocations. There is no manual
+`./dist/saki-backend &` step. The auto-start emits one `daemon:autostart {result,pid}` line to
+**stderr** and nothing to stdout, so `--json` output stays parseable.
+
+`saki backend *` is the explicit lifecycle surface, and is the one command group that never
+auto-starts — it must report the state it finds, not repair it first.
+
+```bash
+saki backend start     # start the daemon; idempotent — "already running (pid N)" and exit 0
+saki backend stop      # SIGTERM, then SIGKILL after 5s; idempotent — "not running" and exit 0
+saki backend status    # PID liveness + a health verdict
+saki backend status --json
+# {"pid":41233,"healthy":true,"goUrl":"http://127.0.0.1:8788","socketPath":"/tmp/saki-501/backend.sock"}
+```
+
+`socketPath` is the unix socket the backend binds alongside its loopback TCP port, owner-only
+(`0600`). The CLI prefers it and falls back to TCP when it is absent, when `SAKI_BACKEND_URL` is set
+explicitly, or on Windows (where the socket is a declared non-goal). `socketPath` is `null` whenever
+the socket is unavailable, and `pid` is `null` when no daemon is tracked.
+
+Exit codes follow the usual contract: a backend that cannot be started is `3` (UNREACHABLE), never
+`1`. All daemon waits share one wall-clock budget, so these commands return in ≤ 10 s even when the
+binary is missing, unreachable, or wedged.
 
 ### `saki mcp` — the same journey commands as typed tools
 

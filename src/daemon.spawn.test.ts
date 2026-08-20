@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { daemonStatePath, ensureDaemon, readDaemonState } from './daemon.js'
@@ -61,10 +61,14 @@ function killThrows(pid: number, code: string): void {
 }
 
 // Every stale-state criterion ends the same way: the bad file is gone and exactly one fresh daemon
-// replaced it. Seeded state is written raw so non-numeric PIDs (AC 2.4) can be expressed.
+// replaced it. Seeded state is written raw so non-numeric PIDs (AC 2.4) can be expressed, and aged
+// past the boot budget so it can only be read as stale — a record written moments ago is
+// indistinguishable from a winner still booting, which is the case the aging separates.
 async function expectStaleStateReplaced(dir: string, seed: string): Promise<void> {
   const env = { SAKI_DAEMON_STATE_DIR: dir }
   await writeFile(daemonStatePath(env), seed)
+  const aged = new Date(Date.now() - 60_000)
+  await utimes(daemonStatePath(env), aged, aged)
   const gate = stubBackend()
   stubSpawn(gate)
 
@@ -101,19 +105,21 @@ describe('ensureDaemon PID tracking and stale-state cleanup', () => {
     )
   })
 
-  // AC 2.4 — a PID owned by another user is never reusable, and a non-numeric PID is not a PID.
-  it('cleans EPERM and non-numeric PID state', async () => {
-    const eperm = await stateDir()
+  // AC 2.4 — a PID owned by another user is never reusable.
+  it('cleans EPERM state owned by another user', async () => {
+    const dir = await stateDir()
     killThrows(STALE_PID, 'EPERM')
     await expectStaleStateReplaced(
-      eperm,
+      dir,
       JSON.stringify({ pid: STALE_PID, socketPath: null, goUrl: 'http://go.test' }),
     )
+  })
 
-    childProcess.spawn.mockReset()
-    const nan = await stateDir()
+  // AC 2.4 — a non-numeric PID is not a PID.
+  it('cleans non-numeric PID state', async () => {
+    const dir = await stateDir()
     await expectStaleStateReplaced(
-      nan,
+      dir,
       '{"pid":"not-a-pid","socketPath":null,"goUrl":"http://go.test"}',
     )
   })
@@ -166,6 +172,48 @@ describe('ensureDaemon PID tracking and stale-state cleanup', () => {
     await expect(ensureDaemon(env)).rejects.toMatchObject({ code: 3 })
     await expect(readDaemonState(env)).resolves.toBeNull()
     expect(existsSync(daemonStatePath(env))).toBe(false)
+  })
+
+  // AC 2.3, cross-process half — 🔒 INVARIANT 2. A SECOND CLI arriving mid-boot reads the winner's
+  // already-written state: valid, PID alive, health still refusing. That is byte-identical to the
+  // recycled-PID state of AC 2.5, and reading it as stale is what frees the lock for a second spawn.
+  it('waits out a winner that is still booting instead of spawning a second daemon', async () => {
+    const dir = await stateDir()
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    const winner = { pid: process.pid, socketPath: null, goUrl: 'http://go.test' }
+    await writeFile(daemonStatePath(env), JSON.stringify(winner))
+    const gate = stubBackend()
+    stubSpawn(gate)
+    // The winner's Go process finishes binding shortly after this invocation starts.
+    setTimeout(() => { gate.up = true }, 250)
+
+    await expect(ensureDaemon(env)).resolves.toEqual(winner)
+    expect(childProcess.spawn).not.toHaveBeenCalled()
+  })
+
+  // Outcome 5.5 — the whole call honours ONE wall-clock budget, so a contended lock cannot turn
+  // three bounded attempts into a multiple-of-the-budget hang.
+  it('gives up inside its budget when the lock stays contended', async () => {
+    const dir = await stateDir()
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    // A sentinel nobody ever completes: every attempt loses the lock and finds no real PID.
+    await writeFile(daemonStatePath(env), JSON.stringify({ pid: -1, socketPath: null, goUrl: DEFAULT_GO_URL }))
+    stubBackend()
+    childProcess.spawn.mockImplementation(() => {
+      throw new Error('spawn must not be reached while the lock is held')
+    })
+    // Re-seed the sentinel as fast as the loop can clear it, standing in for a peer that keeps winning.
+    const contend = setInterval(() => {
+      void writeFile(daemonStatePath(env), JSON.stringify({ pid: -1, socketPath: null, goUrl: DEFAULT_GO_URL }))
+    }, 10)
+
+    const started = Date.now()
+    try {
+      await expect(ensureDaemon(env, { budgetMs: 400 })).rejects.toMatchObject({ code: 3 })
+    } finally {
+      clearInterval(contend)
+    }
+    expect(Date.now() - started).toBeLessThan(3_000)
   })
 
   // PRD §8 Slice 2, loser path: "If PID never appears (winner crashed pre-write): delete state file,
