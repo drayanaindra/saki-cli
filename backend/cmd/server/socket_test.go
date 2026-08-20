@@ -237,6 +237,46 @@ func TestRemoveOwnDaemonState_OnlyDeletesItsOwnRecord(t *testing.T) {
 	}
 }
 
+// A second backend on another PORT must not claim a live daemon's record: doing so rewrites goUrl,
+// redirecting every saki command to the newcomer, and its exit then deletes the original's record.
+func TestWriteDaemonState_DoesNotClaimALiveDaemonsRecord(t *testing.T) {
+	dir := shortTempDir(t)
+	path := filepath.Join(dir, "backend.state.json")
+	t.Setenv("SAKI_DAEMON_STATE_PATH", path)
+
+	// os.Getppid() is a pid that is certainly alive and certainly not us.
+	held := []byte(fmt.Sprintf(`{"pid":%d,"socketPath":null,"goUrl":"http://127.0.0.1:8788"}`, os.Getppid()))
+	if err := os.WriteFile(path, held, 0o600); err != nil {
+		t.Fatalf("seed held state: %v", err)
+	}
+
+	writeDaemonState("", "127.0.0.1:8790")
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if string(body) != string(held) {
+		t.Fatalf("state = %s, want the live daemon's record untouched", body)
+	}
+}
+
+func TestWriteDaemonState_ClaimsAStaleRecord(t *testing.T) {
+	dir := shortTempDir(t)
+	path := filepath.Join(dir, "backend.state.json")
+	t.Setenv("SAKI_DAEMON_STATE_PATH", path)
+	stale := []byte(`{"pid":999999,"socketPath":null,"goUrl":"http://127.0.0.1:8788"}`)
+	if err := os.WriteFile(path, stale, 0o600); err != nil {
+		t.Fatalf("seed stale state: %v", err)
+	}
+
+	writeDaemonState("/tmp/x.sock", "127.0.0.1:8788")
+
+	if got := recordedPID(path); got != os.Getpid() {
+		t.Fatalf("recorded pid = %d, want this process (%d)", got, os.Getpid())
+	}
+}
+
 // §13 + AC 4.6: an over-long path is rejected by our own guard, BEFORE net.Listen turns it into a
 // bare EINVAL. Disabling the socket must not be fatal — TCP still serves.
 func TestListenUnix_RejectsOverLongPathBeforeListen(t *testing.T) {

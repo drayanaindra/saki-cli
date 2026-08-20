@@ -110,45 +110,38 @@ describe('cmdBackend', () => {
     expect(JSON.parse(out[0])).toMatchObject({ pid: 42, healthy: false })
   })
 
-  it('reports healthy and unhealthy status states', async () => {
+  it('names the PID of a tracked healthy daemon', async () => {
     daemon.readDaemonState.mockResolvedValue(state)
     daemon.probeBackendHealth.mockResolvedValue(true)
-    const healthy = context(false)
-    await expect(cmdBackend(healthy.ctx, ['status'], {})).resolves.toBe(EXIT.OK)
-    expect(healthy.out).toEqual(['backend healthy (pid 42)'])
+    const { ctx, out } = context(false)
 
-    daemon.readDaemonState.mockResolvedValue(null)
-    daemon.probeBackendHealth.mockResolvedValue(false)
-    const unavailable = context()
-    await expect(cmdBackend(unavailable.ctx, ['status'], {})).resolves.toBe(EXIT.OK)
-    expect(JSON.parse(unavailable.out[0])).toEqual({
-      pid: null,
-      healthy: false,
-      goUrl: unavailable.ctx.client.goUrl,
-      socketPath: null,
-    })
+    await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
+    expect(out).toEqual(['backend healthy (pid 42)'])
   })
 
-  it('reports healthy via reachability probe when no state file exists (service-managed backend)', async () => {
+  it('reports nothing running when there is no state and no answer', async () => {
     daemon.readDaemonState.mockResolvedValue(null)
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) }))
-    vi.stubGlobal('fetch', fetchMock)
+    daemon.probeBackendHealth.mockResolvedValue(false)
     const { ctx, out } = context()
+
     await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
     expect(JSON.parse(out[0])).toEqual({
       pid: null,
-      healthy: true,
+      healthy: false,
       goUrl: ctx.client.goUrl,
       socketPath: null,
     })
-    expect(fetchMock).toHaveBeenCalledWith(`${ctx.client.goUrl}/api/health`, expect.anything())
   })
 
-  it('renders a distinct human message for a service-managed backend with no state file', async () => {
+  // §10 rule 4 — status reports the state it FINDS. A manually launched backend owns the port with
+  // no state record, and ensureDaemon already reuses it; calling that "not running" would be the
+  // exact misreport the rule exists to prevent.
+  it('reports an untracked backend that is answering as healthy', async () => {
     daemon.readDaemonState.mockResolvedValue(null)
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    daemon.probeBackendHealth.mockResolvedValue(true)
     const { ctx, out } = context(false)
+
     await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
-    expect(out).toEqual(['backend healthy (service-managed, no local state file)'])
+    expect(out).toEqual(['backend healthy (not daemon-tracked)'])
   })
 })
