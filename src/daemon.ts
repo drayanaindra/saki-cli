@@ -33,6 +33,9 @@ const MAX_LOCK_ATTEMPTS = 3
 const STOP_GRACE_MS = 5_000
 // §16 wire format: pid -1 marks the state file as claimed but not yet backed by a spawned process.
 const LOCK_SENTINEL_PID = -1
+// Authority carried by unix-socket requests. It addresses nothing — it exists so OriginGuard
+// (backend/adapter/originguard.go) sees a loopback Host on socket traffic.
+const SOCKET_HOST = 'localhost'
 
 export function daemonStateDir(env: DaemonEnv = process.env): string {
   const uid = userInfo().uid ?? process.getuid?.() ?? 0
@@ -110,12 +113,24 @@ export async function waitForLiveness(
   throw new CliError(`saki-backend liveness timeout: ${lastError}`, EXIT.UNREACHABLE)
 }
 
+// Fetch over the daemon's unix socket, for Go-origin requests only.
+//
+// The URL authority is rewritten rather than a `Host` header being set: fetch treats `Host` as a
+// forbidden header name and drops it silently, so the header route leaves whatever authority `goUrl`
+// happens to carry to satisfy OriginGuard by luck. The dispatcher pins every connection to the
+// socket, so the authority no longer addresses anything — it only decides the Host header, and
+// pinning it to loopback is what makes OriginGuard's accept deterministic (§12.3 / AC 4.6).
 export function socketFetch(socketPath: string): typeof fetch {
   const dispatcher = new Agent({ connect: { socketPath } })
   return (async (input: string | URL | Request, init?: RequestInit) => {
-    const headers = new Headers(init?.headers)
-    headers.set('Host', 'localhost')
-    return (undiciFetch as unknown as (input: unknown, init: unknown) => Promise<unknown>)(input, { ...init, headers: Object.fromEntries(headers.entries()), dispatcher }) as unknown as Response
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    url.protocol = 'http:'
+    url.hostname = SOCKET_HOST
+    url.port = ''
+    return (undiciFetch as unknown as (input: unknown, init: unknown) => Promise<unknown>)(
+      url.toString(),
+      { ...init, dispatcher },
+    ) as unknown as Response
   }) as unknown as typeof fetch
 }
 

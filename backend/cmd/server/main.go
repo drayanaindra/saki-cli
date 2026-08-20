@@ -155,31 +155,18 @@ func main() {
 		}
 	}()
 
-	socketPath := ""
-	var unix net.Listener
-	if runtime.GOOS != "windows" {
-		socketPath = daemonSocketPath()
-		if len([]byte(socketPath)) > unixSocketLimit() {
-			log.Printf("unix socket disabled: path too long: %s", socketPath)
-			socketPath = ""
-		} else {
-			_ = os.MkdirAll(filepath.Dir(socketPath), 0o700)
-			_ = os.Remove(socketPath)
-			unix, err = net.Listen("unix", socketPath)
-			if err != nil {
-				log.Printf("unix socket disabled: %v", err)
-				socketPath = ""
-			} else {
-				if err := os.Chmod(socketPath, 0o600); err != nil {
-					log.Printf("unix socket chmod: %v", err)
-				}
-				go func() {
-					if err := http.Serve(unix, mux); err != nil && err != http.ErrServerClosed {
-						log.Printf("unix serve: %v", err)
-					}
-				}()
+	unix, socketPath, err := listenUnix(daemonSocketPath())
+	if err != nil {
+		// A socket the CLI cannot get is a DEGRADATION, not a startup failure: the TCP listener above
+		// is already serving and the CLI falls back to it whenever socketPath is absent from the state.
+		log.Printf("unix socket disabled: %v", err)
+	}
+	if unix != nil {
+		go func() {
+			if err := http.Serve(unix, mux); err != nil && err != http.ErrServerClosed {
+				log.Printf("unix serve: %v", err)
 			}
-		}
+		}()
 	}
 	writeDaemonState(socketPath, addr)
 	log.Printf("saki go backend listening on http://%s (%s), socket=%s", addr, proxyMode(upstream), socketPath)
@@ -204,6 +191,44 @@ func daemonStatePath() string {
 }
 
 func daemonSocketPath() string { return filepath.Join(filepath.Dir(daemonStatePath()), "backend.sock") }
+
+// listenUnix binds the owner-local unix socket that sits alongside the loopback TCP listener
+// (🔒 INVARIANT 1 — the socket is owner-only, never off-host).
+//
+// Returns the listener and the path actually bound; an empty path means "no socket, use TCP" and is
+// the CLI's signal to fall back. Windows is a declared Non-Goal, so it takes that path deliberately.
+//
+// Ordering is load-bearing:
+//   - the length guard runs BEFORE Listen, so an over-long path is a descriptive error rather than a
+//     bare EINVAL from the kernel;
+//   - the stale path is removed BEFORE Listen, because a crashed predecessor leaves its socket file
+//     behind and bind would fail with EADDRINUSE against a file nothing is serving;
+//   - Chmod runs immediately after Listen and BEFORE the first accept, so the socket is never
+//     reachable at the umask-derived permissions.
+func listenUnix(socketPath string) (net.Listener, string, error) {
+	if runtime.GOOS == "windows" {
+		return nil, "", nil
+	}
+	if limit := unixSocketLimit(); len([]byte(socketPath)) > limit {
+		return nil, "", fmt.Errorf("path too long (%d > %d): %s", len([]byte(socketPath)), limit, socketPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(socketPath), 0o700); err != nil {
+		return nil, "", err
+	}
+	if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
+		return nil, "", err
+	}
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := os.Chmod(socketPath, 0o600); err != nil {
+		_ = listener.Close()
+		_ = os.Remove(socketPath)
+		return nil, "", err
+	}
+	return listener, socketPath, nil
+}
 
 func unixSocketLimit() int {
 	if runtime.GOOS == "darwin" {
