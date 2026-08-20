@@ -25,9 +25,9 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 **Child PRD:** prd-mcp-surface-saki-mcp.md
 
 ### F4 · `saki doctor` — claude coverage
-**Type:** Feature · **Track:** PRD · **Status:** In-progress · **Owner:** unassigned · **Updated:** 2026-08-20
+**Type:** Feature · **Track:** PRD · **Status:** Shipped · **Owner:** unassigned · **Updated:** 2026-08-20
 **Goal:** Give claude a pre-dispatch provisioning verdict so doctor covers 3/3 engines instead of 2/3. Deferred from F2: not a mirror of the existing proofs — it needs `installed_plugins.json` **and** `settings.json` → `enabledPlugins` (the registry carries no enablement), plus a pinned resolution order for the two plugin-id spellings, which carry different versions.
-**Child PRD:** —
+**Child PRD:** prd-saki-doctor-claude-coverage.md
 **Phase chain:** F2 (MVP) → F4 [trigger: F2 shipped and a claude-profile provisioning failure is reported]
 
 ### F5 · `saki doctor` — remediation text for opencode and claude
