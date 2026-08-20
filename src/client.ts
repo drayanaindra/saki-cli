@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { EXIT, CliError, type ExitCode } from './exit.js'
 import { backendFor, DEFAULT_GO_URL, type Backend } from './routes.js'
 import { socketFetch } from './daemon.js'
@@ -114,7 +115,11 @@ export class StudioClient {
     this.goUrl = opts.goUrl ?? (opts.baseUrl ? opts.baseUrl : resolveGoUrl(env))
     this.expressConfigured = Boolean(opts.baseUrl) || (env.SAKI_STUDIO_URL?.trim() ?? '') !== ''
     this.fetchImpl = opts.fetchImpl ?? fetch
-    if (opts.socketPath && !opts.fetchImpl && !this.expressConfigured && !env.SAKI_BACKEND_URL) {
+    // existsSync is the "no hang on dead socket" guard (AC 4.3): a state file can outlive the socket
+    // it names (a crashed backend leaves both behind, an operator can delete one). Injecting a
+    // dispatcher pinned to a path nothing is serving would fail every Go request; falling back to TCP
+    // lets the pre-flight auto-start recover instead.
+    if (opts.socketPath && existsSync(opts.socketPath) && !opts.fetchImpl && !this.expressConfigured && !env.SAKI_BACKEND_URL) {
       this.socketFetchImpl = socketFetch(opts.socketPath)
     }
   }
