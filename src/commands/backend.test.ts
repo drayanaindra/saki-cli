@@ -69,12 +69,44 @@ describe('cmdBackend', () => {
     expect(out).toEqual(['backend started (pid 42)'])
   })
 
+  // AC 3.3 — idempotent start names the existing PID rather than claiming a fresh spawn.
   it('reports an already running backend', async () => {
     daemon.readDaemonState.mockResolvedValue(state)
     daemon.ensureDaemon.mockResolvedValue(state)
     const { ctx, out } = context()
     await expect(cmdBackend(ctx, ['start'], {})).resolves.toBe(EXIT.OK)
     expect(JSON.parse(out[0])).toEqual(state)
+
+    const human = context(false)
+    await expect(cmdBackend(human.ctx, ['start'], {})).resolves.toBe(EXIT.OK)
+    expect(human.out).toEqual(['backend already running (pid 42)'])
+  })
+
+  // AC 3.4 — the --json contract: {pid, healthy, goUrl, socketPath}, socketPath a path once Slice 4
+  // has provisioned one.
+  it('emits the documented status --json shape for a running daemon', async () => {
+    const socketed = { ...state, socketPath: '/tmp/saki-501/backend.sock' }
+    daemon.readDaemonState.mockResolvedValue(socketed)
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    const { ctx, out } = context()
+
+    await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
+    expect(JSON.parse(out[0])).toEqual({
+      pid: 42,
+      healthy: true,
+      goUrl: 'http://127.0.0.1:8788',
+      socketPath: '/tmp/saki-501/backend.sock',
+    })
+  })
+
+  // AC 3.4 — an alive PID whose backend does not answer reports healthy:false, not an error exit.
+  it('reports an unhealthy daemon without failing the command', async () => {
+    daemon.readDaemonState.mockResolvedValue(state)
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('connect ECONNREFUSED') }))
+    const { ctx, out } = context()
+
+    await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
+    expect(JSON.parse(out[0])).toMatchObject({ pid: 42, healthy: false })
   })
 
   it('reports healthy and unhealthy status states', async () => {

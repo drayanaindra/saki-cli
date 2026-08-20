@@ -100,3 +100,64 @@ describe('daemon state and liveness', () => {
   })
 
 })
+
+// A daemon under stop: `signals` records what it was sent, and it stays alive until it honours one.
+function stoppableDaemon(pid: number, honours: NodeJS.Signals[]): { signals: string[] } {
+  const signals: string[] = []
+  let alive = true
+  vi.spyOn(process, 'kill').mockImplementation(((target: number, signal: NodeJS.Signals | 0) => {
+    if (target !== pid) return true
+    if (signal === 0) {
+      if (!alive) {
+        const err = new Error('ESRCH') as NodeJS.ErrnoException
+        err.code = 'ESRCH'
+        throw err
+      }
+      return true
+    }
+    signals.push(signal)
+    if (honours.includes(signal)) alive = false
+    return true
+  }) as typeof process.kill)
+  return { signals }
+}
+
+async function seedRunningState(pid: number): Promise<{ SAKI_DAEMON_STATE_DIR: string }> {
+  const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-stop-'))
+  const env = { SAKI_DAEMON_STATE_DIR: dir }
+  await writeFile(daemonStatePath(env), JSON.stringify({ pid, socketPath: null, goUrl: 'http://go.test' }))
+  return env
+}
+
+describe('stopDaemon signal escalation', () => {
+  // AC 3.2 / 5.4
+  it('terminates on SIGTERM and removes the state file', async () => {
+    const env = await seedRunningState(4242)
+    const daemon = stoppableDaemon(4242, ['SIGTERM'])
+
+    await expect(stopDaemon(env)).resolves.toBe('stopped')
+    expect(daemon.signals).toEqual(['SIGTERM'])
+    await expect(readDaemonState(env)).resolves.toBeNull()
+  })
+
+  // §10 rule 5 — escalation, and the state file goes regardless of which signal did it.
+  it('escalates to SIGKILL when SIGTERM is ignored', async () => {
+    const env = await seedRunningState(4243)
+    const daemon = stoppableDaemon(4243, ['SIGKILL'])
+
+    await expect(stopDaemon(env, { graceMs: 50 })).resolves.toBe('stopped')
+    expect(daemon.signals).toEqual(['SIGTERM', 'SIGKILL'])
+    await expect(readDaemonState(env)).resolves.toBeNull()
+  })
+
+  // Outcome 5.3 — a hung daemon must still be killed, never reported away as "not running".
+  it('stops a live daemon whose backend has stopped answering health', async () => {
+    const env = await seedRunningState(4244)
+    const daemon = stoppableDaemon(4244, ['SIGTERM'])
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('connect ECONNREFUSED') }))
+
+    await expect(stopDaemon(env)).resolves.toBe('stopped')
+    expect(daemon.signals).toEqual(['SIGTERM'])
+    await expect(readDaemonState(env)).resolves.toBeNull()
+  })
+})

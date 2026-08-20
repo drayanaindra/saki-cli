@@ -29,6 +29,8 @@ const STATE_NAME = 'backend.state.json'
 const LOCK_POLL_MS = 100
 const LOCK_POLL_TRIES = 10
 const MAX_LOCK_ATTEMPTS = 3
+// §10 rule 5: how long a stopping daemon gets to honour SIGTERM before SIGKILL.
+const STOP_GRACE_MS = 5_000
 
 export function daemonStateDir(env: DaemonEnv = process.env): string {
   const uid = userInfo().uid ?? process.getuid?.() ?? 0
@@ -270,16 +272,31 @@ export async function ensureDaemon(env: DaemonEnv = process.env): Promise<Daemon
   )
 }
 
-export async function stopDaemon(env: DaemonEnv = process.env): Promise<'not-running' | 'stopped'> {
+// §10 rule 5: SIGTERM first, escalate to SIGKILL after the grace period, and always remove the state
+// file afterwards regardless of which signal did it.
+export async function stopDaemon(
+  env: DaemonEnv = process.env,
+  options: { graceMs?: number } = {},
+): Promise<'not-running' | 'stopped'> {
   const state = await readDaemonState(env)
-  if (!state || !(await healthy(state))) {
+  // Liveness, NOT health, decides whether there is anything to stop. A daemon that has stopped
+  // answering /api/health is still our process holding the port — calling that "not running" and
+  // dropping its state file would orphan it (outcome 5.3) with nothing left tracking its PID.
+  if (!state || !isAlive(state.pid)) {
     await removeDaemonState(env)
     return 'not-running'
   }
-  try { process.kill(state.pid, 'SIGTERM') } catch { await removeDaemonState(env); return 'not-running' }
-  const deadline = Date.now() + 5_000
-  while (Date.now() < deadline && isAlive(state.pid)) await new Promise((resolve) => setTimeout(resolve, 100))
-  if (isAlive(state.pid)) { try { process.kill(state.pid, 'SIGKILL') } catch { /* already gone */ } }
+  try {
+    process.kill(state.pid, 'SIGTERM')
+  } catch {
+    await removeDaemonState(env)
+    return 'not-running'
+  }
+  const deadline = Date.now() + (options.graceMs ?? STOP_GRACE_MS)
+  while (Date.now() < deadline && isAlive(state.pid)) await delay(LOCK_POLL_MS)
+  if (isAlive(state.pid)) {
+    try { process.kill(state.pid, 'SIGKILL') } catch { /* exited between the probe and the signal */ }
+  }
   await removeDaemonState(env)
   return 'stopped'
 }
