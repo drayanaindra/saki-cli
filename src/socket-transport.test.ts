@@ -77,6 +77,16 @@ describe('unix socket transport', () => {
     await expect(client.request('/api/health')).rejects.toMatchObject({ code: EXIT.UNREACHABLE })
   })
 
+  // AC 4.3 — a state file can name a socket that no longer exists. Falling back to TCP is what keeps
+  // the next command recoverable by auto-start instead of failing against a dead path.
+  it('falls back to TCP when the named socket no longer exists', async () => {
+    const socketPath = await serveOverSocket()
+    await rm(socketPath, { force: true })
+    const client = new StudioClient({ env: {}, goUrl: DEAD_TCP, socketPath })
+
+    await expect(client.request('/api/health')).rejects.toMatchObject({ code: EXIT.UNREACHABLE })
+  })
+
   // An explicitly injected fetchImpl (every existing test, and the MCP in-process path) keeps
   // precedence — the socket must not silently override a caller's transport.
   it('leaves an explicit fetchImpl in charge', async () => {

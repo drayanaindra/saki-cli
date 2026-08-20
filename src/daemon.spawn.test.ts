@@ -191,6 +191,30 @@ describe('ensureDaemon PID tracking and stale-state cleanup', () => {
     expect(childProcess.spawn).not.toHaveBeenCalled()
   })
 
+  // AC 4.3 — a crashed daemon leaves state naming a socket that is gone. Auto-start must replace it
+  // promptly rather than stalling on the dead path, and the record it leaves carries no stale socket.
+  it('replaces a dead daemon whose state names a removed socket', async () => {
+    const dir = await stateDir()
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    await writeFile(daemonStatePath(env), JSON.stringify({
+      pid: STALE_PID,
+      socketPath: join(dir, 'backend.sock'),
+      goUrl: DEFAULT_GO_URL,
+    }))
+    killThrows(STALE_PID, 'ESRCH')
+    const gate = stubBackend()
+    stubSpawn(gate)
+
+    const started = Date.now()
+    await expect(ensureDaemon(env)).resolves.toEqual({
+      pid: process.pid,
+      socketPath: null,
+      goUrl: DEFAULT_GO_URL,
+    })
+    expect(Date.now() - started).toBeLessThan(10_000)
+    expect(childProcess.spawn).toHaveBeenCalledTimes(1)
+  })
+
   // Outcome 5.5 — the whole call honours ONE wall-clock budget, so a contended lock cannot turn
   // three bounded attempts into a multiple-of-the-budget hang.
   it('gives up inside its budget when the lock stays contended', async () => {
