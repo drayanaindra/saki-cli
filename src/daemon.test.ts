@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { daemonStateDir, daemonStatePath, readDaemonState, waitForLiveness, binaryPath, removeDaemonState, isAlive, ensureDaemon, stopDaemon } from './daemon.js'
+import { daemonStateDir, daemonStatePath, readDaemonState, waitForLiveness, binaryPath, removeDaemonState, isAlive, ensureDaemon, probeBackendHealth, stopDaemon } from './daemon.js'
 import { EXIT } from './exit.js'
 
 
@@ -129,6 +130,50 @@ async function seedRunningState(pid: number): Promise<{ SAKI_DAEMON_STATE_DIR: s
   return env
 }
 
+// A peer that ACCEPTS the connection and then says nothing. Modelled the way a real fetch behaves:
+// it settles only when the caller's AbortSignal fires, so a probe that forgot to abort hangs here
+// exactly as it would in production.
+function silentPeer(seen: AbortSignal[]): typeof fetch {
+  return ((_url: string, init?: RequestInit) => {
+    if (init?.signal) seen.push(init.signal)
+    return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+    })
+  }) as typeof fetch
+}
+
+describe('bounded health probes', () => {
+  // Outcome 5.5 / AC 1.4. A peer that ACCEPTS the connection and never answers is the case an
+  // un-aborted fetch waits ~300s (undici's default header timeout) for — one such probe would blow
+  // the whole wall-clock budget the CLI's 10s ceiling rests on.
+  it('gives up on a peer that accepts and never answers', async () => {
+    const started = Date.now()
+    const seen: AbortSignal[] = []
+
+    await expect(probeBackendHealth('http://go.test', 50, silentPeer(seen))).resolves.toBe(false)
+
+    expect(Date.now() - started).toBeLessThan(2_000)
+    // Aborted, not merely abandoned: an un-aborted request keeps the socket and the event loop alive
+    // until undici's own 300s header timeout.
+    expect(seen[0]?.aborted).toBe(true)
+  })
+
+  it('reports a healthy backend and rejects a non-ok body', async () => {
+    const ok = (async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) })) as unknown as typeof fetch
+    const degraded = (async () => ({ ok: true, status: 200, json: async () => ({ ok: false }) })) as unknown as typeof fetch
+
+    await expect(probeBackendHealth('http://go.test', 500, ok)).resolves.toBe(true)
+    await expect(probeBackendHealth('http://go.test', 500, degraded)).resolves.toBe(false)
+  })
+
+  it('treats an exhausted budget as unhealthy without issuing a request', async () => {
+    const never = vi.fn(async () => { throw new Error('should not be called') })
+
+    await expect(probeBackendHealth('http://go.test', 0, never as unknown as typeof fetch)).resolves.toBe(false)
+    expect(never).not.toHaveBeenCalled()
+  })
+})
+
 describe('stopDaemon signal escalation', () => {
   // AC 3.2 / 5.4
   it('terminates on SIGTERM and removes the state file', async () => {
@@ -159,5 +204,43 @@ describe('stopDaemon signal escalation', () => {
     await expect(stopDaemon(env)).resolves.toBe('stopped')
     expect(daemon.signals).toEqual(['SIGTERM'])
     await expect(readDaemonState(env)).resolves.toBeNull()
+  })
+
+  // 🔒 INVARIANT 2 — a spawn lock another invocation is HOLDING is not this call's to clean up.
+  // readDaemonState returns null for the pid:-1 sentinel, so a naive "no state → tidy up" would
+  // delete the lock mid-spawn and re-open the double-spawn O_CREAT|O_EXCL exists to close.
+  it('leaves a spawn lock held by another invocation alone', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-stop-'))
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    const held = JSON.stringify({ pid: -1, socketPath: null, goUrl: 'http://go.test' })
+    await writeFile(daemonStatePath(env), held)
+
+    await expect(stopDaemon(env)).resolves.toBe('not-running')
+    await expect(readFile(daemonStatePath(env), 'utf8')).resolves.toBe(held)
+  })
+
+  // Outcome 5.3 — while this call waited out the grace period another invocation auto-started a
+  // replacement and wrote ITS record. Deleting that orphans a live daemon.
+  it('does not delete a replacement daemon written while it was stopping', async () => {
+    const env = await seedRunningState(4245)
+    const replacement = { pid: 4246, socketPath: null, goUrl: 'http://go.test' }
+    let alive = true
+    vi.spyOn(process, 'kill').mockImplementation(((target: number, signal: NodeJS.Signals | 0) => {
+      if (target !== 4245) return true
+      if (signal === 0) {
+        if (alive) return true
+        const err = new Error('ESRCH') as NodeJS.ErrnoException
+        err.code = 'ESRCH'
+        throw err
+      }
+      // The daemon exits — and a concurrent invocation auto-starts a replacement that claims the file
+      // before this call finishes waiting.
+      alive = false
+      writeFileSync(daemonStatePath(env), JSON.stringify(replacement))
+      return true
+    }) as typeof process.kill)
+
+    await expect(stopDaemon(env, { graceMs: 50 })).resolves.toBe('stopped')
+    await expect(readDaemonState(env)).resolves.toEqual(replacement)
   })
 })

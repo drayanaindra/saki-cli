@@ -8,6 +8,7 @@ const daemon = vi.hoisted(() => ({
   ensureDaemon: vi.fn(),
   readDaemonState: vi.fn(),
   stopDaemon: vi.fn(),
+  probeBackendHealth: vi.fn(),
 }))
 
 vi.mock('../daemon.js', () => daemon)
@@ -87,7 +88,7 @@ describe('cmdBackend', () => {
   it('emits the documented status --json shape for a running daemon', async () => {
     const socketed = { ...state, socketPath: '/tmp/saki-501/backend.sock' }
     daemon.readDaemonState.mockResolvedValue(socketed)
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    daemon.probeBackendHealth.mockResolvedValue(true)
     const { ctx, out } = context()
 
     await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
@@ -102,7 +103,7 @@ describe('cmdBackend', () => {
   // AC 3.4 — an alive PID whose backend does not answer reports healthy:false, not an error exit.
   it('reports an unhealthy daemon without failing the command', async () => {
     daemon.readDaemonState.mockResolvedValue(state)
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('connect ECONNREFUSED') }))
+    daemon.probeBackendHealth.mockResolvedValue(false)
     const { ctx, out } = context()
 
     await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
@@ -111,7 +112,7 @@ describe('cmdBackend', () => {
 
   it('reports healthy and unhealthy status states', async () => {
     daemon.readDaemonState.mockResolvedValue(state)
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    daemon.probeBackendHealth.mockResolvedValue(true)
     const healthy = context(false)
     await expect(cmdBackend(healthy.ctx, ['status'], {})).resolves.toBe(EXIT.OK)
     expect(healthy.out).toEqual(['backend healthy (pid 42)'])

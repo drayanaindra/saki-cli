@@ -1,5 +1,5 @@
-import { open, readFile, stat, unlink, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync, mkdirSync } from 'node:fs'
+import { open, readFile, lstat, stat, unlink, mkdir } from 'node:fs/promises'
+import { constants as FS_CONST, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { userInfo } from 'node:os'
@@ -31,11 +31,16 @@ const LOCK_POLL_TRIES = 10
 const MAX_LOCK_ATTEMPTS = 3
 // §10 rule 5: how long a stopping daemon gets to honour SIGTERM before SIGKILL.
 const STOP_GRACE_MS = 5_000
+// Ceiling on a single health probe. Loopback either answers fast or is not answering.
+const HEALTH_PROBE_MS = 2_000
 // §16 wire format: pid -1 marks the state file as claimed but not yet backed by a spawned process.
 const LOCK_SENTINEL_PID = -1
 // Authority carried by unix-socket requests. It addresses nothing — it exists so OriginGuard
 // (backend/adapter/originguard.go) sees a loopback Host on socket traffic.
 const SOCKET_HOST = 'localhost'
+// Truncating write that refuses a symlink at the final component. The state file lives in a shared
+// temp root, so a plain 'w' open would follow a planted link and overwrite its target as this user.
+const STATE_WRITE_FLAGS = FS_CONST.O_WRONLY | FS_CONST.O_CREAT | FS_CONST.O_TRUNC | FS_CONST.O_NOFOLLOW
 
 export function daemonStateDir(env: DaemonEnv = process.env): string {
   const uid = userInfo().uid ?? process.getuid?.() ?? 0
@@ -122,8 +127,14 @@ export async function waitForLiveness(
 // pinning it to loopback is what makes OriginGuard's accept deterministic (§12.3 / AC 4.6).
 export function socketFetch(socketPath: string): typeof fetch {
   const dispatcher = new Agent({ connect: { socketPath } })
-  return (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : String(input))
+  return (async (input: string | URL, init?: RequestInit) => {
+    // Deliberately not accepting a Request: rewriting the URL means only `init` carries the method,
+    // headers and body, so a Request would silently downgrade a POST to a GET. The one caller
+    // (client.ts requestOn) passes a URL string plus init; fail loudly if that ever changes.
+    if (typeof input !== 'string' && !(input instanceof URL)) {
+      throw new CliError('socket transport takes a url, not a Request', EXIT.ERROR)
+    }
+    const url = new URL(String(input))
     url.protocol = 'http:'
     url.hostname = SOCKET_HOST
     url.port = ''
@@ -158,10 +169,45 @@ async function spawnDaemon(env: DaemonEnv = process.env): Promise<ChildProcess> 
   return child
 }
 
+// The state directory lives in a SHARED temp root, so its existence proves nothing about who owns it:
+// mkdir(recursive) succeeds silently on a directory somebody else created and never re-applies the
+// mode. Everything security-relevant about the daemon comes out of a file in here — the socketPath
+// the CLI dials, the goUrl it fetches, the PID `saki backend stop` signals — so a directory this user
+// does not exclusively own is a full hijack of the CLI↔backend channel, and on a host where TMPDIR is
+// the shared /tmp another local user can win the race by simply creating it first.
+async function ensurePrivateStateDir(env: DaemonEnv): Promise<void> {
+  const dir = daemonStateDir(env)
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  // POSIX-only: uid scoping and file modes are meaningless on Windows, where the socket is a
+  // declared Non-Goal and the CLI runs over TCP anyway.
+  const uid = process.getuid?.()
+  if (uid === undefined) return
+  const info = await lstat(dir)
+  // isDirectory() is false for a symlink under lstat, which is the point: a planted symlink would
+  // otherwise satisfy mkdir and redirect every write below it.
+  //
+  // Group/other WRITE is the hijack bit — planting a state file or socket needs write on the
+  // directory. Read/traverse is not the threat: the records inside are 0600, so a 0755 directory
+  // (what an inherited umask commonly produces) is safe and must not be rejected.
+  if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o022) !== 0) {
+    throw new CliError(
+      `daemon state directory is not private: ${dir}`,
+      EXIT.UNREACHABLE,
+      'remove it, or point SAKI_DAEMON_STATE_DIR at a directory you own with mode 0700',
+    )
+  }
+}
+
 async function writeState(state: DaemonState, env: DaemonEnv): Promise<void> {
-  const path = daemonStatePath(env)
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-  await writeFile(path, JSON.stringify(state), { mode: 0o600 })
+  await ensurePrivateStateDir(env)
+  // O_NOFOLLOW, not writeFile: the plain 'w' flag is O_CREAT|O_TRUNC and FOLLOWS symlinks, so a
+  // symlink planted at this path would truncate and overwrite whatever it points at, as this user.
+  const handle = await open(daemonStatePath(env), STATE_WRITE_FLAGS, 0o600)
+  try {
+    await handle.writeFile(JSON.stringify(state))
+  } finally {
+    await handle.close()
+  }
 }
 
 async function stateIsLock(env: DaemonEnv): Promise<boolean> {
@@ -175,8 +221,10 @@ async function stateIsLock(env: DaemonEnv): Promise<boolean> {
 
 async function acquireStateLock(env: DaemonEnv): Promise<boolean> {
   const path = daemonStatePath(env)
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  await ensurePrivateStateDir(env)
   try {
+    // 'wx' is O_CREAT|O_EXCL, which already refuses an existing symlink — the exclusivity that makes
+    // this the lock ALSO makes it symlink-safe.
     const handle = await open(path, 'wx', 0o600)
     await handle.writeFile(JSON.stringify({ pid: LOCK_SENTINEL_PID, socketPath: null, goUrl: DEFAULT_GO_URL }))
     await handle.close()
@@ -187,25 +235,39 @@ async function acquireStateLock(env: DaemonEnv): Promise<boolean> {
   }
 }
 
-async function healthy(state: DaemonState, fetchImpl?: typeof fetch): Promise<boolean> {
-  if (!isAlive(state.pid)) return false
+// Every health probe is BOUNDED. A peer that accepts the connection and then never answers — a
+// SIGSTOPped backend, a swapping one, an unrelated listener squatting the port — leaves an un-aborted
+// fetch pending for undici's 300 s header timeout. That single call would blow the wall-clock budget
+// outcome 5.5 rests on, which is why waitForLiveness already aborts and why these must too.
+export async function probeBackendHealth(
+  goUrl: string,
+  timeoutMs = HEALTH_PROBE_MS,
+  fetchImpl?: typeof fetch,
+): Promise<boolean> {
+  if (timeoutMs <= 0) return false
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await (fetchImpl ?? fetch)(`${state.goUrl}/api/health`)
+    const response = await (fetchImpl ?? fetch)(`${goUrl}/api/health`, { signal: controller.signal })
     const body = await response.json() as { ok?: boolean }
     return response.ok && body.ok === true
   } catch {
     return false
+  } finally {
+    clearTimeout(timer)
   }
 }
 
-async function goHealthy(goUrl: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${goUrl}/api/health`)
-    const body = await response.json() as { ok?: boolean }
-    return response.ok && body.ok === true
-  } catch {
-    return false
-  }
+// Clamp a probe to whatever is left of the caller's budget, so the last probe before a deadline
+// cannot overshoot it.
+function probeBudget(deadline?: number): number {
+  if (deadline === undefined) return HEALTH_PROBE_MS
+  return Math.min(HEALTH_PROBE_MS, deadline - Date.now())
+}
+
+async function healthy(state: DaemonState, deadline?: number): Promise<boolean> {
+  if (!isAlive(state.pid)) return false
+  return probeBackendHealth(state.goUrl, probeBudget(deadline))
 }
 
 function delay(ms: number): Promise<void> {
@@ -250,11 +312,11 @@ async function readRawPid(env: DaemonEnv): Promise<number | null> {
 // Returns null once the record cannot become healthy — the PID is gone, or the boot budget it was
 // written under has already elapsed (AC 2.5: a recycled PID never goes healthy, and its record is old).
 async function awaitBackendReady(state: DaemonState, env: DaemonEnv, deadline: number): Promise<DaemonState | null> {
-  if (await healthy(state)) return state
+  if (await healthy(state, deadline)) return state
   const bootDeadline = Math.min(deadline, Date.now() + Math.max(0, DEFAULT_TIMEOUT_MS - await stateAgeMs(env)))
   while (Date.now() < bootDeadline && isAlive(state.pid)) {
     await delay(LOCK_POLL_MS)
-    if (await healthy(state)) return (await readDaemonState(env)) ?? state
+    if (await healthy(state, deadline)) return (await readDaemonState(env)) ?? state
   }
   return null
 }
@@ -274,7 +336,7 @@ async function reuseRunningDaemon(env: DaemonEnv, deadline: number): Promise<Dae
     await removeDaemonState(env)
   }
   const goUrl = env.SAKI_BACKEND_URL ?? DEFAULT_GO_URL
-  if (await goHealthy(goUrl)) return { pid: 0, socketPath: null, goUrl }
+  if (await probeBackendHealth(goUrl, probeBudget(deadline))) return { pid: 0, socketPath: null, goUrl }
   return null
 }
 
@@ -358,13 +420,16 @@ export async function stopDaemon(
   // answering /api/health is still our process holding the port — calling that "not running" and
   // dropping its state file would orphan it (outcome 5.3) with nothing left tracking its PID.
   if (!state || !isAlive(state.pid)) {
-    await removeDaemonState(env)
+    // readDaemonState also returns null for the pid:-1 sentinel, i.e. a lock ANOTHER invocation is
+    // currently holding while it spawns. Deleting that would re-open the very double-spawn the
+    // O_CREAT|O_EXCL protocol exists to close, so only an unowned, non-lock record is cleaned up.
+    if (!(await stateIsLock(env))) await releaseState(env, state?.pid ?? (await readRawPid(env)) ?? 0)
     return 'not-running'
   }
   try {
     process.kill(state.pid, 'SIGTERM')
   } catch {
-    await removeDaemonState(env)
+    await releaseState(env, state.pid)
     return 'not-running'
   }
   const deadline = Date.now() + (options.graceMs ?? STOP_GRACE_MS)
@@ -372,7 +437,9 @@ export async function stopDaemon(
   if (isAlive(state.pid)) {
     try { process.kill(state.pid, 'SIGKILL') } catch { /* exited between the probe and the signal */ }
   }
-  await removeDaemonState(env)
+  // Compare-and-delete: while this call was waiting out the grace period, another invocation can have
+  // auto-started a replacement and written ITS record. Unlinking that one would orphan a live daemon.
+  await releaseState(env, state.pid)
   return 'stopped'
 }
 
