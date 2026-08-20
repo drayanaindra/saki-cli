@@ -40,6 +40,14 @@ describe('daemon state and liveness', () => {
     await expect(waitForLiveness('http://go.test', { fetchImpl: (async () => { throw new Error('down') }) as typeof fetch, timeoutMs: 2, intervalMs: 1 })).rejects.toMatchObject({ code: EXIT.UNREACHABLE })
   })
 
+  it('bounds a health request that never resolves', async () => {
+    await expect(waitForLiveness('http://go.test', {
+      fetchImpl: (() => new Promise<Response>(() => undefined)) as typeof fetch,
+      timeoutMs: 10,
+      intervalMs: 1,
+    })).rejects.toMatchObject({ code: EXIT.UNREACHABLE })
+  })
+
   it('honors an explicit backend binary path', () => {
     expect(binaryPath({ SAKI_BACKEND_BIN: '/custom/saki-backend' })).toBe('/custom/saki-backend')
   })

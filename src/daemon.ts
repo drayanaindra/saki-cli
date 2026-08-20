@@ -74,15 +74,28 @@ export async function waitForLiveness(
   const fetchImpl = options.fetchImpl ?? fetch
   let lastError = 'backend did not become healthy'
   while (Date.now() < deadline) {
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const response = await fetchImpl(`${goUrl}/api/health`)
-      const body = await response.json() as { ok?: boolean }
+      const controller = new AbortController()
+      const remaining = deadline - Date.now()
+      const request = fetchImpl(`${goUrl}/api/health`, { signal: controller.signal })
+        .then(async (response) => ({ response, body: await response.json() as { ok?: boolean } }))
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort()
+          reject(new Error('health check timed out'))
+        }, remaining)
+      })
+      const { response, body } = await Promise.race([request, timeout])
       if (response.ok && body.ok === true) return
       lastError = `health returned HTTP ${response.status}`
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err)
+    } finally {
+      if (timer) clearTimeout(timer)
     }
-    await new Promise((resolve) => setTimeout(resolve, options.intervalMs ?? 100))
+    if (Date.now() >= deadline) break
+    await new Promise((resolve) => setTimeout(resolve, Math.min(options.intervalMs ?? 100, deadline - Date.now())))
   }
   throw new CliError(`saki-backend liveness timeout: ${lastError}`, EXIT.UNREACHABLE)
 }
