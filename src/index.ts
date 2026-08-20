@@ -146,7 +146,7 @@ const COMMANDS: CommandDef[] = [
   {
     path: ['doctor'],
     usage: 'saki doctor [--profile <dir>]',
-    summary: 'can codex/opencode actually run a saki-builder command, before you dispatch a run',
+    summary: 'can each engine actually run a saki-builder command, before you dispatch a run',
     flags: { ...COMMON, profile: 'string' },
     run: (ctx, positionals, flags) => cmdDoctor(ctx, positionals, flags),
   },

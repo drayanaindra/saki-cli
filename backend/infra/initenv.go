@@ -66,24 +66,32 @@ func (EngineProvisioner) Provision(req usecase.ProvisionRequest) (bool, error) {
 // — resolved by the SAME helper both of those use, so the directory created is never a third path.
 // 0700 because a profile can hold the engine's credentials.
 func ensureEngineHome(engine domain.RunEngine, profile *string) error {
-	if engine != domain.EngineCodex {
+	var home string
+	var label string
+	switch engine {
+	case domain.EngineCodex:
+		home, label = codexHomePath(profile), "codex"
+	case domain.EngineClaude:
+		home, label = claudeHomePath(profile), "claude"
+	default:
 		return nil
 	}
-	home := codexHomePath(profile)
 	if err := os.MkdirAll(home, 0o700); err != nil {
-		return fmt.Errorf("cannot create the codex home %s: %w", home, err)
+		return fmt.Errorf("cannot create the %s home %s: %w", label, home, err)
 	}
 	return nil
 }
 
-// provisionArgv resolves the engine's fixed command list. Codex + opencode in slice 2; usecase
-// refuses claude before reaching here, so this is a defence-in-depth guard rather than the gate.
+// provisionArgv resolves the engine's fixed command list. The usecase selects supported engines first;
+// this remains a defence-in-depth guard for direct adapter callers.
 func provisionArgv(engine domain.RunEngine) ([][]string, bool) {
 	switch engine {
 	case domain.EngineCodex:
 		return usecase.CodexProvisionArgv, true
 	case domain.EngineOpencode:
 		return usecase.OpencodeProvisionArgv, true
+	case domain.EngineClaude:
+		return usecase.ClaudeProvisionArgv, true
 	default:
 		return nil, false
 	}
@@ -152,6 +160,9 @@ func profileFingerprint(engine domain.RunEngine, profile *string) string {
 		paths = []string{filepath.Join(home, "config.toml"), filepath.Join(home, "skills", codexProofSkill, "SKILL.md")}
 	case domain.EngineOpencode:
 		paths = []string{opencodeConfigPath(profile)}
+	case domain.EngineClaude:
+		installed, settings := claudeProfilePaths(profile)
+		paths = []string{installed, settings}
 	default:
 		return ""
 	}

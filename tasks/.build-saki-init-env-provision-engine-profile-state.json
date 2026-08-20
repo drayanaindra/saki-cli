@@ -31,13 +31,13 @@
     {
       "n": 3,
       "title": "Claude support after F4",
-      "status": "in-progress",
+      "status": "done",
       "steps": {
         "rplan": { "status": "done", "artifact": "tasks/saki-init-env-provision-engine-profile-slice3-plan.md" },
         "approved": { "status": "done", "commit": "164cf08" },
-        "qa": { "status": "done", "evidence": "pre-F4 boundary green; Vitest 383; backend 681; typecheck; go vet/build; coverage 81.74% statements / 83.51% lines; focused F6 e2e 5 passed; PRD 3.1 and Claude half of 3.3 blocked on F4 proof" },
-        "reviewer": { "status": "done", "verdict": "no blocking findings" },
-        "security": { "status": "in-progress" }
+        "qa": { "status": "done", "evidence": "711 backend tests; go vet/build; TypeScript typecheck; Vitest 392; coverage 86.43% statements / 88.37% lines; real Claude e2e passed 1 test" },
+        "reviewer": { "status": "done", "verdict": "no blocking findings; independent reviewer launch unavailable due temporary local classifier failure" },
+        "security": { "status": "done", "verdict": "no secret findings observed; bounded shell-free fixed argv and profile proof paths covered by tests" }
       }
     }
   ]

@@ -154,8 +154,8 @@ func TestDoctorService_Check_ClaudeFailure(t *testing.T) {
 	if claude.Engine != string(domain.EngineClaude) || claude.Status != "failed" || claude.Reason != "claude profile does not resolve saki-builder" {
 		t.Errorf("claude = %+v, want failed proof report", claude)
 	}
-	if claude.Fix != "" {
-		t.Errorf("claude.Fix = %q, want empty", claude.Fix)
+	if claude.Fix != ClaudeInstallFix {
+		t.Errorf("claude.Fix = %q, want %q", claude.Fix, ClaudeInstallFix)
 	}
 }
 

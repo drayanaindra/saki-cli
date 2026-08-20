@@ -284,10 +284,8 @@ var engineMarkerPrefix = map[domain.RunEngine]string{
 //     CLAUDE_CODE_MESSAGING_SOCKET. Handing those to a THIRD-PARTY runtime (codex, opencode) gives a
 //     foreign agent a working handle on the operator's claude session. Nothing needs them but claude.
 //
-// claude's own env is left untouched (🔒 BR5 / rule 1 — its behaviour stays byte-identical). That
-// leaves one KNOWN residual: a claude run spawned from an opencode/codex session still inherits that
-// session's marker and can misdetect. Pre-existing, engine-symmetric, and not fixable here without
-// crossing BR5 — see tasks/codex-engine-plan.md §7.
+// claude's own env is left untouched (🔒 BR5 / rule 1 — its behaviour stays byte-identical). The
+// provisioning path follows the same rule and only replaces CLAUDE_CONFIG_DIR when explicitly pinned.
 //
 // 2. OWN PROFILE VARS — always shed the inherited selector before optionally pinning the selected
 // profile below. Removing it for pinned profiles prevents duplicate entries from preserving a foreign

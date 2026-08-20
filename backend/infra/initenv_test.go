@@ -98,9 +98,59 @@ exit 0
 }
 
 // 🔒 BR4 + the fixed-argv rule. Asserts the child sees the EXACT argv from usecase's single engine
-// mapping, that its EFFECTIVE CODEX_HOME is the one CodexSkillsProof will read, and that the other
-// engines' namespaces were shed. The foreign vars are PLANTED first — an absence assertion on a clean
-// shell would pass even with scrubProfileEnv deleted entirely.
+// mapping. Claude keeps its established spawn environment contract; only its profile selector is
+// replaced for a pinned provisioning request.
+func TestClaudeProvisionArgvContract(t *testing.T) {
+	if got, want := len(usecase.ClaudeProvisionArgv), 2; got != want {
+		t.Fatalf("ClaudeProvisionArgv has %d vectors, want %d", got, want)
+	}
+	want := [][]string{
+		{"claude", "plugin", "marketplace", "add", "https://gitlab.com/drayanaindra/saki-builder.git", "--scope", "user"},
+		{"claude", "plugin", "install", "saki-builder@saketek", "--scope", "user"},
+	}
+	for i := range want {
+		if got := strings.Join(usecase.ClaudeProvisionArgv[i], " "); got != strings.Join(want[i], " ") {
+			t.Fatalf("argv[%d] = %q, want %q", i, got, strings.Join(want[i], " "))
+		}
+	}
+}
+
+func TestEngineProvisionerProvisionsClaudeWithFixedArgvAndProfileEnv(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "record")
+	t.Setenv("SAKI_TEST_RECORD", out)
+	t.Setenv("CLAUDE_CONFIG_DIR", "/should-not-win/claude")
+	writeFakeClaude(t, `printf 'argv: %s\n' "$*" >> "$SAKI_TEST_RECORD"
+printf 'CLAUDE_CONFIG_DIR=%s\n' "$CLAUDE_CONFIG_DIR" >> "$SAKI_TEST_RECORD"
+exit 0
+`)
+	profile := t.TempDir()
+	if _, err := (EngineProvisioner{}).Provision(usecase.ProvisionRequest{Cwd: t.TempDir(), Engine: domain.EngineClaude, Profile: &profile}); err != nil {
+		t.Fatalf("provision failed: %v", err)
+	}
+	recorded, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(recorded)
+	for _, vec := range usecase.ClaudeProvisionArgv {
+		if want := "argv: " + strings.Join(vec[1:], " "); !strings.Contains(got, want) {
+			t.Errorf("child argv missing %q\\nrecorded:\\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "CLAUDE_CONFIG_DIR="+profile) {
+		t.Errorf("child Claude profile is not selected: %s", got)
+	}
+}
+
+func writeFakeClaude(t *testing.T, body string) {
+	t.Helper()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func TestEngineProvisionerUsesFixedArgvAndScrubbedEnv(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "record")
 	t.Setenv("SAKI_TEST_RECORD", out)
@@ -245,6 +295,28 @@ func TestEngineProvisionerInstallerFailureIsReturnedAndConfigPreserved(t *testin
 
 // An UNPINNED provision must shed an inherited CODEX_HOME, so the operator's environment cannot
 // redirect the write to a profile other than the one the proof then validates (~/.codex).
+func TestEngineProvisionerUnpinnedShedsInheritedClaudeConfigDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	out := filepath.Join(t.TempDir(), "record")
+	t.Setenv("SAKI_TEST_RECORD", out)
+	t.Setenv("CLAUDE_CONFIG_DIR", "/hijacked")
+	writeFakeClaude(t, `printf 'CLAUDE_CONFIG_DIR=[%s]\n' "$CLAUDE_CONFIG_DIR" >> "$SAKI_TEST_RECORD"`+"\nexit 0\n")
+
+	if _, err := (EngineProvisioner{}).Provision(usecase.ProvisionRequest{
+		Cwd: t.TempDir(), Engine: domain.EngineClaude,
+	}); err != nil {
+		t.Fatalf("provision failed: %v", err)
+	}
+
+	recorded, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(recorded), "/hijacked") {
+		t.Fatalf("unpinned provision inherited CLAUDE_CONFIG_DIR: %s", recorded)
+	}
+}
+
 func TestEngineProvisionerUnpinnedShedsInheritedCodexHome(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "record")
 	t.Setenv("SAKI_TEST_RECORD", out)
@@ -342,13 +414,12 @@ func TestSummarizeChildOutputIsBoundedToOneLine(t *testing.T) {
 	}
 }
 
-// The claude branch is unreachable through the service (slice 3 gates it), but the adapter keeps
-// its own guard so a future caller cannot reach an engine mapping that does not exist.
-func TestEngineProvisionerRefusesEnginesWithoutAMapping(t *testing.T) {
-	writeFakeCodex(t, "exit 0\n")
+func TestEngineProvisionerAcceptsClaudeMapping(t *testing.T) {
+	writeFakeClaude(t, "exit 0\n")
+	profile := t.TempDir()
 	if _, err := (EngineProvisioner{}).Provision(usecase.ProvisionRequest{
-		Cwd: t.TempDir(), Engine: domain.EngineClaude,
-	}); !errors.Is(err, usecase.ErrInitEnvUnsupported) {
-		t.Fatalf("claude: err = %v, want ErrInitEnvUnsupported (slice 3 owns claude)", err)
+		Cwd: t.TempDir(), Engine: domain.EngineClaude, Profile: &profile,
+	}); err != nil {
+		t.Fatalf("claude mapping was rejected: %v", err)
 	}
 }

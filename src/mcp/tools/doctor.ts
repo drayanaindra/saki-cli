@@ -9,7 +9,7 @@ export function registerDoctorTool(server: McpServer, makeToolCtx: ToolCtxFactor
     'saki_doctor',
     {
       title: 'saki doctor',
-      description: 'can codex/opencode actually run a saki-builder command, before you dispatch a run',
+      description: 'can each engine actually run a saki-builder command, before you dispatch a run',
       inputSchema: { profile: z.string().optional() },
       annotations: READ_ONLY_ANNOTATIONS,
     },

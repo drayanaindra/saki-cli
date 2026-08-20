@@ -59,7 +59,7 @@ func (p *stubProofs) ProfileProof(domain.RunEngine, *string) error {
 
 var errNotProvisioned = errors.New("codex profile does not resolve @saketek/saki-builder")
 
-func TestInitEnvServiceClaudeIsNotVerifiedWithoutWriting(t *testing.T) {
+func TestInitEnvServiceClaudeAlreadyProvenSkipsAdapter(t *testing.T) {
 	dir := t.TempDir()
 	adapter := &spyProvisioner{changed: true}
 	proofs := &stubProofs{}
@@ -67,15 +67,56 @@ func TestInitEnvServiceClaudeIsNotVerifiedWithoutWriting(t *testing.T) {
 
 	status, body := svc.Provision(ProvisionRequest{Cwd: dir, Engine: domain.EngineClaude})
 
-	if status != 200 || body["status"] != string(domain.InitEnvStatusNotVerified) || body["changed"] != false {
+	if status != 200 || body["status"] != string(domain.InitEnvStatusOK) || body["changed"] != false {
 		t.Fatalf("status=%d body=%v", status, body)
 	}
-	if body["reason"] != ErrInitEnvUnsupported.Error()+unsupportedReason[domain.EngineClaude] || body["fix"] != "" {
-		t.Fatalf("body=%v, want explicit F4 reason and no fix", body)
+	if adapter.calls != 0 || proofs.binaryCalls != 0 || proofs.profileCalls != 1 {
+		t.Fatalf("claude calls: adapter=%d binary=%d profile=%d", adapter.calls, proofs.binaryCalls, proofs.profileCalls)
 	}
-	// §10 non-goal + criterion 3.2: claude must make NO write or profile/proof lookup before F4.
-	if adapter.calls != 0 || proofs.binaryCalls != 0 || proofs.profileCalls != 0 {
-		t.Fatalf("claude calls: adapter=%d binary=%d profile=%d, want all 0", adapter.calls, proofs.binaryCalls, proofs.profileCalls)
+}
+
+func TestInitEnvServiceClaudeProvisionsThenProves(t *testing.T) {
+	dir := t.TempDir()
+	adapter := &spyProvisioner{changed: true}
+	proofs := &stubProofs{profileErr: []error{errNotProvisioned, nil}}
+	svc := NewInitEnvService(adapter, proofs)
+
+	status, body := svc.Provision(ProvisionRequest{Cwd: dir, Engine: domain.EngineClaude})
+
+	if status != 200 || body["status"] != string(domain.InitEnvStatusOK) || body["changed"] != true {
+		t.Fatalf("status=%d body=%v", status, body)
+	}
+	if adapter.calls != 1 || proofs.binaryCalls != 0 || proofs.profileCalls != 2 {
+		t.Fatalf("claude calls: adapter=%d binary=%d profile=%d", adapter.calls, proofs.binaryCalls, proofs.profileCalls)
+	}
+}
+
+func TestInitEnvServiceClaudeInstallerExitZeroIsNotProof(t *testing.T) {
+	dir := t.TempDir()
+	adapter := &spyProvisioner{changed: true}
+	proofs := &stubProofs{profileErr: []error{errNotProvisioned, errNotProvisioned}}
+	svc := NewInitEnvService(adapter, proofs)
+
+	status, body := svc.Provision(ProvisionRequest{Cwd: dir, Engine: domain.EngineClaude})
+
+	if status != 200 || body["status"] != string(domain.InitEnvStatusFailed) {
+		t.Fatalf("status=%d body=%v", status, body)
+	}
+	if body["fix"] != ClaudeInstallFix {
+		t.Fatalf("fix=%v, want ClaudeInstallFix", body["fix"])
+	}
+}
+
+func TestInitEnvServiceClaudeProofWinsOverInstallerError(t *testing.T) {
+	dir := t.TempDir()
+	adapter := &spyProvisioner{err: errors.New("already registered")}
+	proofs := &stubProofs{profileErr: []error{errNotProvisioned, nil}}
+	svc := NewInitEnvService(adapter, proofs)
+
+	status, body := svc.Provision(ProvisionRequest{Cwd: dir, Engine: domain.EngineClaude})
+
+	if status != 200 || body["status"] != string(domain.InitEnvStatusOK) {
+		t.Fatalf("status=%d body=%v", status, body)
 	}
 }
 
@@ -320,6 +361,20 @@ func TestProfileLockKeyCollapsesEquivalentOpencodeProfiles(t *testing.T) {
 	}
 }
 
+func TestProfileLockKeyUsesClaudeDefaultProfile(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(home, ".claude")
+	if got, want := profileLockKey(domain.EngineClaude, nil), profileLockKey(domain.EngineClaude, &root); got != want {
+		t.Fatalf("default and explicit Claude profiles use different lock keys: %q != %q", got, want)
+	}
+	if got := profileLockKey(domain.EngineClaude, nil); strings.Contains(got, filepath.Join(".config", "claude")) {
+		t.Fatalf("Claude default lock key uses legacy profile root: %q", got)
+	}
+}
+
 func TestProfileGateSerializesEquivalentOpencodeProfiles(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -412,8 +467,7 @@ func TestOpencodeInstallFixIsRenderedFromTheProvisionArgv(t *testing.T) {
 	}
 }
 
-// engineInstallFix must cover every provisionable engine, and stay empty for claude (slice 3) so a
-// not-verified engine never advertises a command that would be run.
+// engineInstallFix must cover every provisionable engine.
 func TestEngineInstallFixCoversProvisionableEngines(t *testing.T) {
 	if got := engineInstallFix(domain.EngineCodex); got != CodexInstallFix {
 		t.Fatalf("codex fix = %q, want CodexInstallFix", got)
@@ -421,7 +475,19 @@ func TestEngineInstallFixCoversProvisionableEngines(t *testing.T) {
 	if got := engineInstallFix(domain.EngineOpencode); got != OpencodeInstallFix {
 		t.Fatalf("opencode fix = %q, want OpencodeInstallFix", got)
 	}
-	if got := engineInstallFix(domain.EngineClaude); got != "" {
-		t.Fatalf("claude fix = %q, want empty (slice 3 owns claude)", got)
+	if got := engineInstallFix(domain.EngineClaude); got != ClaudeInstallFix {
+		t.Fatalf("claude fix = %q, want ClaudeInstallFix", got)
+	}
+}
+
+func TestClaudeInstallFixIsRenderedFromProvisionArgv(t *testing.T) {
+	lines := strings.Split(ClaudeInstallFix, "\n")
+	if len(lines) != len(ClaudeProvisionArgv) {
+		t.Fatalf("ClaudeInstallFix has %d lines, want %d vectors", len(lines), len(ClaudeProvisionArgv))
+	}
+	for i, vec := range ClaudeProvisionArgv {
+		if want := strings.Join(vec, " "); lines[i] != want {
+			t.Errorf("line %d = %q, want %q", i, lines[i], want)
+		}
 	}
 }

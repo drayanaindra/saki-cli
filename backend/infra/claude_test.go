@@ -160,3 +160,45 @@ func TestEngineProfileProof_ClaudeMatchesDirectProof(t *testing.T) {
 		t.Fatalf("direct proof = %v, dispatcher proof = %v", want, got)
 	}
 }
+
+func TestClaudeProfilePathsUseNativeDefault(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed, settings := claudeProfilePaths(nil)
+	want := filepath.Join(home, ".claude")
+	if filepath.Dir(filepath.Dir(installed)) != want || filepath.Dir(settings) != want {
+		t.Fatalf("default Claude profile paths = %q, %q; want root %q", installed, settings, want)
+	}
+}
+
+func TestClaudeProfileFingerprintCoversOnlyProofFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeClaudeProfile(t, dir,
+		`{"plugins":{"saketek@saki-builder":[{"version":"1"}]}}`,
+		`{"enabledPlugins":{"saketek@saki-builder":true}}`,
+	)
+	base := profileFingerprint(domain.EngineClaude, &dir)
+	if err := os.WriteFile(filepath.Join(dir, "unrelated.json"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := profileFingerprint(domain.EngineClaude, &dir); got != base {
+		t.Fatal("unrelated Claude profile file changed the fingerprint")
+	}
+	installed, _ := claudeProfilePaths(&dir)
+	if err := os.WriteFile(installed, []byte(`{"plugins":{"saketek@saki-builder":[{"version":"2"}]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := profileFingerprint(domain.EngineClaude, &dir); got == base {
+		t.Fatal("installed_plugins.json change did not change the fingerprint")
+	}
+	changed := profileFingerprint(domain.EngineClaude, &dir)
+	_, settings := claudeProfilePaths(&dir)
+	if err := os.WriteFile(settings, []byte(`{"enabledPlugins":{"saketek@saki-builder":false}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := profileFingerprint(domain.EngineClaude, &dir); got == changed {
+		t.Fatal("settings.json change did not change the fingerprint")
+	}
+}

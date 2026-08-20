@@ -7,8 +7,7 @@ type EngineStatus string
 const (
 	StatusOK     EngineStatus = "ok"
 	StatusFailed EngineStatus = "failed"
-	// StatusUnknown is reserved for a future engine whose provisioning state cannot be determined
-	// (F4, claude) — codex/opencode in this slice only ever report StatusOK/StatusFailed.
+	// StatusUnknown is reserved for a future engine whose provisioning state cannot be determined.
 	StatusUnknown EngineStatus = "unknown"
 )
 

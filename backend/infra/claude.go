@@ -75,6 +75,11 @@ func resolveClaudeProfile(configDir *string) (claudePlugin, error) {
 	return claudePlugin{}, errors.New("no supported installed plugin")
 }
 
+func claudeHomePath(configDir *string) string {
+	installed, _ := claudeProfilePaths(configDir)
+	return filepath.Dir(filepath.Dir(installed))
+}
+
 func claudeProfilePaths(configDir *string) (string, string) {
 	base := ""
 	if configDir != nil && *configDir != "" {

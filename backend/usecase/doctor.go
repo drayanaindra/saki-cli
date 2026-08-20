@@ -22,6 +22,9 @@ var CodexInstallFix = renderProvisionArgv(CodexProvisionArgv)
 // slice-1's Annotation Space: doctor now names the same opencode command init-env runs.
 var OpencodeInstallFix = renderProvisionArgv(OpencodeProvisionArgv)
 
+// ClaudeInstallFix is Claude's user-scope remediation rendered from the exact init-env argv.
+var ClaudeInstallFix = renderProvisionArgv(ClaudeProvisionArgv)
+
 // DoctorService computes a pre-dispatch provisioning verdict per DoctorEngines. It never spawns
 // anything (rule 5) and never installs/writes/repairs (rule 1) — Check's only capability is the
 // EngineProofs port, so both are structural guarantees, not merely observed behavior.

@@ -37,7 +37,7 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 **Phase chain:** F2 (MVP) → F5 [trigger: F2 shipped and an opencode `failed` verdict is seen without a fix]
 
 ### F6 · `saki init-env` — provision an engine profile
-**Type:** Feature · **Track:** PRD · **Status:** In-progress · **Owner:** unassigned · **Updated:** 2026-08-16
+**Type:** Feature · **Track:** PRD · **Status:** Shipped · **Owner:** unassigned · **Updated:** 2026-08-20
 **Goal:** Provisioning an engine profile (`opencode`/`claude`/`codex`) is a real `saki-cli` command instead of an external/manual step, so `saki doctor` and a run's `--engine` flag have something the CLI itself can set up, not just check.
 **Target user & Job (JTBD):** As an operator setting up `saki-cli` in a repo (or an agent bootstrapping one), when I need a chosen engine's profile ready to run `/saki-builder:*` skills, I want one command to provision it so I can start running without manual file wrangling or a separate script.
 **User flow:** `saki init-env --engine <codex|opencode|claude>` → scaffolds/verifies the profile → confirms via `saki doctor` → ready to run

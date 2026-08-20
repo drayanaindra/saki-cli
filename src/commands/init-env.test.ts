@@ -98,21 +98,19 @@ describe('cmdInitEnv', () => {
   })
 
 
-  // An unsupported engine is a real verdict, not a transport failure: EXIT.ERROR with the reason
-  // printed, so an agent can tell "stop, this needs another feature" from "retry".
-  it('maps an unsupported-engine verdict to EXIT.ERROR and prints its reason', async () => {
-    const notVerified: InitEnvResult = {
+  it('maps a Claude proof failure to EXIT.ERROR and prints its remediation', async () => {
+    const failed: InitEnvResult = {
       ...ok,
       engine: 'claude',
-      changed: false,
-      status: 'not_verified',
-      reason: 'engine provisioning is not verified for this engine (claude requires F4)',
-      fix: '',
+      changed: true,
+      status: 'failed',
+      reason: 'claude profile is not verified',
+      fix: 'claude plugin install saki-builder@saketek --scope user',
     }
-    const { ctx, err } = ctxFor(notVerified)
+    const { ctx, err } = ctxFor(failed)
     const code = await cmdInitEnv(ctx, [], { engine: 'claude' })
     expect(code).toBe(EXIT.ERROR)
-    expect(err).toEqual([`error: ${notVerified.reason}`])
+    expect(err).toEqual([`error: ${failed.reason}`, `fix (claude): ${failed.fix}`])
   })
 
   // A 200 with an empty body must produce a clean diagnosis, not an uncaught TypeError reported as

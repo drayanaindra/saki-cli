@@ -108,32 +108,36 @@ saki --help     # exit 0
 
 ### 1.5 Engines — only if you will use `--engine`
 
-**Skip this section entirely if you only ever use claude.** It is the default, and nothing here is
-needed for it.
+Claude is the default, but provision it with `saki init-env --engine claude` when its profile does
+not already prove the saki-builder plugin.
 
 A run executes on one agent runtime. All three resolve the studio's `/saki-builder:*` commands, but
 each has to be provisioned to do so:
 
 | `--engine` | Binary | How it resolves a saki command | Provision with |
 |---|---|---|---|
-| `claude` *(default)* | `claude` | from the message | already true if the studio works |
+| `claude` *(default)* | `claude` | from the message | **`saki init-env --engine claude`** (user-scope plugin install, then proof) |
 | `opencode` | `opencode` | via `--command` (its `run` never expands a slash command in the message), skills installed **bare** | **`saki init-env --engine opencode`** (runs `opencode plugin @saketek/saki-builder --global` with `XDG_CONFIG_HOME` pinned to the profile, then proves the result) |
 | `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | **`saki init-env --engine codex`** (runs the two plugin commands below, then proves the result) |
 
 ```bash
 saki init-env --engine codex [--profile <dir>]      # exit 0 == the profile really resolves the commands
+saki init-env --engine claude [--profile <dir>]     # ditto, for Claude
 saki init-env --engine opencode [--profile <dir>]   # ditto, for opencode
 ```
 
 `saki init-env` is the supported entry point: it provisions ONE engine's profile and then re-runs the
 same proof `saki doctor` uses, so exit `0` means the profile is genuinely ready — an installer's own
-exit code is never the signal. It covers codex and opencode (`--engine claude` exits `1` and writes
-nothing until doctor can prove plugin enablement; its init-env status is `not_verified`). The equivalent by hand:
+exit code is never the signal. It covers Claude, Codex, and OpenCode. The equivalent by hand:
 
 ```bash
 codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
 codex plugin add saki-builder@saketek
 bash scripts/install-codex-skills.sh    # legacy checker; prints the fix if unprovisioned
+
+# claude — user scope, with CLAUDE_CONFIG_DIR=<dir> for an explicit profile
+claude plugin marketplace add https://gitlab.com/drayanaindra/saki-builder.git --scope user
+claude plugin install saki-builder@saketek --scope user
 
 # opencode — the single command form, run with XDG_CONFIG_HOME=<dir> to target a profile
 opencode plugin @saketek/saki-builder --global

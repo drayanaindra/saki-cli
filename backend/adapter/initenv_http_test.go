@@ -96,7 +96,7 @@ func TestInitEnvHandlerRejectsBadInputWithoutInvokingAnAdapter(t *testing.T) {
 // short-circuits at the proof (already-proven profile → `ok`, `changed:false`) WITHOUT invoking the
 // adapter — the structural idempotency of criterion 2.2/2.4. The request is well-formed, so the status
 // is a normal 200 verdict body, not a 422.
-func TestInitEnvHandlerClaudeIsNotVerifiedWithoutInvokingAnAdapter(t *testing.T) {
+func TestInitEnvHandlerClaudeShortCircuitsAtProof(t *testing.T) {
 	spy := &countingProvisioner{}
 	rec := postInitEnv(t, initEnvHandlerFor(spy).Routes(), `{"cwd":"/tmp","engine":"claude"}`, "")
 
@@ -107,11 +107,11 @@ func TestInitEnvHandlerClaudeIsNotVerifiedWithoutInvokingAnAdapter(t *testing.T)
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["status"] != "not_verified" || body["changed"] != false || body["fix"] != "" {
-		t.Fatalf("body = %v, want not_verified/changed:false/fix:\"\"", body)
+	if body["status"] != "ok" || body["changed"] != false || body["fix"] != "" {
+		t.Fatalf("body = %v, want ok/changed:false/fix:\"\"", body)
 	}
-	if body["reason"] != usecase.ErrInitEnvUnsupported.Error()+" (claude requires F4's installed + enabled plugin proof)" {
-		t.Fatalf("reason = %v, want explicit F4 dependency", body["reason"])
+	if body["reason"] != "" {
+		t.Fatalf("reason = %v, want empty", body["reason"])
 	}
 	if spy.calls != 0 {
 		t.Fatalf("claude reached the provisioner %d times, want 0", spy.calls)

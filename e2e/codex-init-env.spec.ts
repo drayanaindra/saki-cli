@@ -123,29 +123,4 @@ test.describe('saki init-env — provision a codex profile, then prove it', () =
     expect(missing.status, 'a missing --engine must exit USAGE=2').toBe(2)
   })
 
-  // claude is refused with a real verdict and no write — the boundary that keeps claude's profile
-  // (which needs F4's installed + enabled proof) unreachable until F4. opencode is NOT here:
-  // slice 2 lands it as a provisioned engine, covered by e2e/opencode-init-env.spec.ts.
-  test('claude is refused without writing anything', () => {
-    for (const engine of ['claude']) {
-      const profile = fs.mkdtempSync(path.join(os.tmpdir(), `saki-unsupported-${engine}-`))
-      const sentinel = path.join(profile, 'sentinel.txt')
-      fs.writeFileSync(sentinel, 'must remain untouched')
-      try {
-        const res = saki(['init-env', '--engine', engine, '--profile', profile, '--json'])
-        expect(res.status, `${engine} must exit 1`).toBe(1)
-        expect(parseJson(res.stdout)).toMatchObject({
-          engine,
-          status: 'not_verified',
-          changed: false,
-          reason: 'engine provisioning is not verified for this engine (claude requires F4\'s installed + enabled plugin proof)',
-          fix: '',
-        })
-        expect(fs.readFileSync(sentinel, 'utf8'), `${engine} modified the profile`).toBe('must remain untouched')
-        expect(fs.readdirSync(profile), `${engine} created files in the profile`).toEqual(['sentinel.txt'])
-      } finally {
-        fs.rmSync(profile, { recursive: true, force: true })
-      }
-    }
-  })
 })

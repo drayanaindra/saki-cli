@@ -12,12 +12,6 @@ import (
 
 var ErrInitEnvUnsupported = errors.New("engine provisioning is not verified for this engine")
 
-// unsupportedReason explains, per engine, WHY provisioning is refused — so an agent can tell
-// "retry later" from "this will never work until another feature ships" and stop instead of looping.
-var unsupportedReason = map[domain.RunEngine]string{
-	domain.EngineClaude: " (claude requires F4's installed + enabled plugin proof)",
-}
-
 // ProvisionRequest is the validated command. Profile is the engine-profile ROOT (the same input
 // doctor and a run's --profile take), nil meaning the engine's own default.
 type ProvisionRequest struct {
@@ -70,22 +64,18 @@ func (s InitEnvService) Provision(req ProvisionRequest) (int, map[string]any) {
 		return status, invalid
 	}
 	base := newInitEnvResult(req)
-	if req.Engine == domain.EngineClaude {
-		base["status"] = string(domain.InitEnvStatusNotVerified)
-		base["reason"] = ErrInitEnvUnsupported.Error() + unsupportedReason[req.Engine]
-		base["fix"] = ""
-		return http200, base
-	}
-	// The refusal for engines not provisionable lives at the service, not merely untested at the adapter.
-	if req.Engine != domain.EngineCodex && req.Engine != domain.EngineOpencode {
-		base["reason"] = ErrInitEnvUnsupported.Error() + unsupportedReason[req.Engine]
+	if req.Engine != domain.EngineCodex && req.Engine != domain.EngineOpencode && req.Engine != domain.EngineClaude {
+		base["reason"] = ErrInitEnvUnsupported.Error()
 		return http200, base
 	}
 	// Before anything is written: no binary means no setup is possible, and the operator needs the
-	// remediation (criterion 1.4). First, so nothing is created on this path.
-	if err := s.proofs.BinaryCheck(req.Engine); err != nil {
-		base["reason"] = err.Error()
-		return http200, base
+	// remediation (criterion 1.4). Claude has no binary preflight contract; the installer path performs
+	// its own bounded lookup.
+	if req.Engine != domain.EngineClaude {
+		if err := s.proofs.BinaryCheck(req.Engine); err != nil {
+			base["reason"] = err.Error()
+			return http200, base
+		}
 	}
 
 	unlock := s.gate.lock(req.Engine, req.Profile)
@@ -180,6 +170,8 @@ func engineInstallFix(engine domain.RunEngine) string {
 		return CodexInstallFix
 	case domain.EngineOpencode:
 		return OpencodeInstallFix
+	case domain.EngineClaude:
+		return ClaudeInstallFix
 	default:
 		return ""
 	}
@@ -248,8 +240,10 @@ func profilePath(engine domain.RunEngine, profile *string) string {
 		return filepath.Join(home, ".codex")
 	case domain.EngineOpencode:
 		return filepath.Join(home, ".config", "opencode")
+	case domain.EngineClaude:
+		return filepath.Join(home, ".claude")
 	default:
-		return filepath.Join(home, ".config", "claude")
+		return "default"
 	}
 }
 
@@ -273,6 +267,12 @@ var CodexProvisionArgv = [][]string{
 // command doctor tells the operator to run cannot drift apart (PRD §11).
 var OpencodeProvisionArgv = [][]string{
 	{"opencode", "plugin", "@saketek/saki-builder", "--global"},
+}
+
+// ClaudeProvisionArgv is the fixed user-scope installer contract for the Claude profile.
+var ClaudeProvisionArgv = [][]string{
+	{"claude", "plugin", "marketplace", "add", "https://gitlab.com/drayanaindra/saki-builder.git", "--scope", "user"},
+	{"claude", "plugin", "install", "saki-builder@saketek", "--scope", "user"},
 }
 
 func renderProvisionArgv(argv [][]string) string {
