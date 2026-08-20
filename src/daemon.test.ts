@@ -44,6 +44,29 @@ describe('daemon state and liveness', () => {
     expect(binaryPath({ SAKI_BACKEND_BIN: '/custom/saki-backend' })).toBe('/custom/saki-backend')
   })
 
+  it('maps a missing backend binary to UNREACHABLE without waiting for liveness timeout', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-test-'))
+    const env = { SAKI_DAEMON_STATE_DIR: dir, SAKI_BACKEND_BIN: join(dir, 'missing-backend') }
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('connection refused') }))
+    await expect(ensureDaemon(env)).rejects.toMatchObject({ code: EXIT.UNREACHABLE, message: 'saki-backend binary not found' })
+  })
+
+  it('maps a non-executable backend binary to UNREACHABLE without hanging', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-test-'))
+    const binary = join(dir, 'backend')
+    await writeFile(binary, '#!/bin/sh\n')
+    const env = { SAKI_DAEMON_STATE_DIR: dir, SAKI_BACKEND_BIN: binary }
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('connection refused') }))
+    await expect(ensureDaemon(env)).rejects.toMatchObject({ code: EXIT.UNREACHABLE })
+  })
+
+  it('does not auto-start when an explicit backend URL is configured', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-test-'))
+    const env = { SAKI_DAEMON_STATE_DIR: dir, SAKI_BACKEND_URL: 'http://go.test' }
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    await expect(ensureDaemon(env)).resolves.toEqual({ pid: 0, socketPath: null, goUrl: 'http://go.test' })
+  })
+
   it('removes missing state files and reports process liveness', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-test-'))
     const env = { SAKI_DAEMON_STATE_DIR: dir }
