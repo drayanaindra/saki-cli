@@ -223,7 +223,16 @@ saki backend status --json
 `socketPath` is the unix socket the backend binds alongside its loopback TCP port, owner-only
 (`0600`). The CLI prefers it and falls back to TCP when it is absent, when `SAKI_BACKEND_URL` is set
 explicitly, or on Windows (where the socket is a declared non-goal). `socketPath` is `null` whenever
-the socket is unavailable, and `pid` is `null` when no daemon is tracked.
+the socket is unavailable.
+
+`pid` is `null` when no daemon is tracked — which is not the same as "nothing is running". A backend
+you launched yourself owns the port without a state record, so `status` reports
+`{"pid":null,"healthy":true}` ("backend healthy (not daemon-tracked)"). Ordinary commands reuse that
+backend rather than spawning a second one against the same port.
+
+The state file and the socket both live in a UID-scoped directory that must be owned by you and not
+group/other-writable. If it isn't, commands fail with exit 3 rather than trusting it — everything the
+CLI dials and every PID it signals comes out of that directory.
 
 Exit codes follow the usual contract: a backend that cannot be started is `3` (UNREACHABLE), never
 `1`. All daemon waits share one wall-clock budget, so these commands return in ≤ 10 s even when the
