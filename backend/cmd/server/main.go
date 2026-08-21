@@ -393,11 +393,21 @@ func writeDaemonState(socketPath, addr string) {
 		log.Printf("daemon state: not claiming %s, already held by live pid %d", path, owner)
 		return
 	}
+	var existing struct {
+		ClaimToken string `json:"claimToken"`
+	}
+	if body, readErr := os.ReadFile(path); readErr == nil {
+		_ = json.Unmarshal(body, &existing)
+	}
 	socket := any(nil)
 	if socketPath != "" {
 		socket = socketPath
 	}
-	body, err := json.Marshal(map[string]any{"pid": os.Getpid(), "socketPath": socket, "goUrl": "http://" + addr})
+	record := map[string]any{"pid": os.Getpid(), "socketPath": socket, "goUrl": "http://" + addr}
+	if existing.ClaimToken != "" {
+		record["claimToken"] = existing.ClaimToken
+	}
+	body, err := json.Marshal(record)
 	if err != nil {
 		log.Printf("daemon state: %v", err)
 		return

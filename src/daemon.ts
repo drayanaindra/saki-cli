@@ -3,6 +3,7 @@ import { constants as FS_CONST, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, userInfo } from 'node:os'
+import { randomUUID } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Agent, fetch as undiciFetch } from 'undici'
 import { EXIT, CliError } from './exit.js'
@@ -39,20 +40,27 @@ const LOCK_SENTINEL_PID = -1
 // Authority carried by unix-socket requests. It addresses nothing — it exists so OriginGuard
 // (backend/adapter/originguard.go) sees a loopback Host on socket traffic.
 const SOCKET_HOST = 'localhost'
+const CLAIM_TOKEN_NAME = 'claimToken'
 let releaseSequence = 0
+
+type DaemonRecord = DaemonState & { claimToken?: string }
 
 function releasePath(path: string): string {
   releaseSequence++
   return `${path}.release-${process.pid}-${releaseSequence}`
 }
 
-async function readRawPidPath(path: string): Promise<number | null> {
+async function readRawRecordPath(path: string): Promise<DaemonRecord | null> {
   try {
-    const raw = JSON.parse(await readFile(path, 'utf8')) as { pid?: unknown }
-    return typeof raw.pid === 'number' ? raw.pid : null
+    return JSON.parse(await readFile(path, 'utf8')) as DaemonRecord
   } catch {
     return null
   }
+}
+
+async function readRawPidPath(path: string): Promise<number | null> {
+  const record = await readRawRecordPath(path)
+  return typeof record?.pid === 'number' ? record.pid : null
 }
 
 async function restoreReleasedState(quarantine: string, path: string): Promise<void> {
@@ -65,7 +73,7 @@ async function restoreReleasedState(quarantine: string, path: string): Promise<v
   }
 }
 
-async function releaseStateFile(path: string, ownedPid: number): Promise<void> {
+async function releaseStateFile(path: string, ownedPid: number, claimToken?: string): Promise<void> {
   const quarantine = releasePath(path)
   try {
     await rename(path, quarantine)
@@ -73,8 +81,18 @@ async function releaseStateFile(path: string, ownedPid: number): Promise<void> {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
     throw err
   }
-  const current = await readRawPidPath(quarantine)
-  if (current === null || current === ownedPid) {
+  const current = await readRawRecordPath(quarantine)
+  const validRecord = current !== null && (
+    current.pid === LOCK_SENTINEL_PID ||
+    (Number.isInteger(current.pid) && current.pid > 0 && typeof current.goUrl === 'string' &&
+      (current.socketPath === null || typeof current.socketPath === 'string'))
+  )
+  const ownsRecord = validRecord && (
+    claimToken !== undefined && current.claimToken !== undefined
+      ? current.claimToken === claimToken
+      : claimToken === undefined && current.pid === ownedPid && current.claimToken === undefined
+  )
+  if (ownsRecord || !validRecord) {
     await unlink(quarantine).catch(() => undefined)
     return
   }
@@ -115,22 +133,24 @@ async function stateDirIsPrivate(env: DaemonEnv): Promise<boolean> {
 // consumer reads through — the CLI dials the socketPath it returns and `saki backend stop` signals
 // the pid it returns. Validating only on WRITE would leave the hijack wide open: a planted,
 // healthy-looking record is believed on the reuse path long before anything writes.
-export async function readDaemonState(env: DaemonEnv = process.env): Promise<DaemonState | null> {
+async function readDaemonRecord(env: DaemonEnv = process.env): Promise<DaemonRecord | null> {
   if (!(await stateDirIsPrivate(env))) return null
-  try {
-    const parsed = JSON.parse(await readFile(daemonStatePath(env), 'utf8')) as Partial<DaemonState>
-    const pid = parsed.pid
-    if (!Number.isInteger(pid) || (pid as number) <= 0 || typeof parsed.goUrl !== 'string') return null
-    if (parsed.socketPath !== null && typeof parsed.socketPath !== 'string') return null
-    return { pid: pid as number, socketPath: parsed.socketPath ?? null, goUrl: parsed.goUrl }
-  } catch {
-    return null
-  }
+  const parsed = await readRawRecordPath(daemonStatePath(env))
+  const pid = parsed?.pid
+  if (!Number.isInteger(pid) || (pid as number) <= 0 || typeof parsed?.goUrl !== 'string') return null
+  if (parsed.socketPath !== null && typeof parsed.socketPath !== 'string') return null
+  return { pid: pid as number, socketPath: parsed.socketPath ?? null, goUrl: parsed.goUrl, claimToken: parsed.claimToken }
+}
+
+export async function readDaemonState(env: DaemonEnv = process.env): Promise<DaemonState | null> {
+  const record = await readDaemonRecord(env)
+  if (!record) return null
+  return { pid: record.pid, socketPath: record.socketPath, goUrl: record.goUrl }
 }
 
 export async function removeDaemonState(env: DaemonEnv = process.env, ownedPid?: number): Promise<void> {
-  const capturedPid = ownedPid ?? await readRawPid(env)
-  await releaseState(env, capturedPid ?? 0)
+  const record = await readDaemonRecord(env)
+  await releaseState(env, ownedPid ?? record?.pid ?? 0, record?.claimToken)
 }
 
 export function binaryPath(env: DaemonEnv = process.env): string | null {
@@ -256,12 +276,12 @@ async function ensurePrivateStateDir(env: DaemonEnv): Promise<void> {
   }
 }
 
-async function writeState(state: DaemonState, env: DaemonEnv): Promise<void> {
+async function writeState(state: DaemonRecord, env: DaemonEnv): Promise<void> {
   await ensurePrivateStateDir(env)
   const path = daemonStatePath(env)
-  const existing = await readDaemonState(env)
-  if (existing?.pid === state.pid && existing.socketPath !== null) {
-    state = { ...state, socketPath: existing.socketPath }
+  const existing = await readDaemonRecord(env)
+  if (existing?.pid === state.pid) {
+    state = { ...state, claimToken: existing.claimToken ?? state.claimToken, socketPath: existing.socketPath ?? state.socketPath }
   }
   const tempPath = `${path}.write-${process.pid}-${++releaseSequence}`
   // Write a complete record before replacing the live path. This prevents a compare-and-release
@@ -292,18 +312,19 @@ async function stateIsLock(env: DaemonEnv): Promise<boolean> {
   }
 }
 
-async function acquireStateLock(env: DaemonEnv): Promise<boolean> {
+async function acquireStateLock(env: DaemonEnv): Promise<string | null> {
   const path = daemonStatePath(env)
   await ensurePrivateStateDir(env)
+  const claimToken = randomUUID()
   try {
     // 'wx' is O_CREAT|O_EXCL, which already refuses an existing symlink — the exclusivity that makes
     // this the lock ALSO makes it symlink-safe.
     const handle = await open(path, 'wx', 0o600)
-    await handle.writeFile(JSON.stringify({ pid: LOCK_SENTINEL_PID, socketPath: null, goUrl: DEFAULT_GO_URL }))
+    await handle.writeFile(JSON.stringify({ pid: LOCK_SENTINEL_PID, socketPath: null, goUrl: DEFAULT_GO_URL, claimToken }))
     await handle.close()
-    return true
+    return claimToken
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return null
     throw err
   }
 }
@@ -361,8 +382,8 @@ async function stateAgeMs(env: DaemonEnv): Promise<number> {
 // Remove only the record this invocation owns. Renaming the record out of the live path makes the
 // ownership check and removal atomic with respect to replacement writers; a replacement that arrives
 // during the check remains visible and the old record is restored without overwriting it.
-async function releaseState(env: DaemonEnv, ownedPid: number): Promise<void> {
-  await releaseStateFile(daemonStatePath(env), ownedPid)
+async function releaseState(env: DaemonEnv, ownedPid: number, claimToken?: string): Promise<void> {
+  await releaseStateFile(daemonStatePath(env), ownedPid, claimToken)
 }
 
 async function readRawPid(env: DaemonEnv): Promise<number | null> {
@@ -378,14 +399,22 @@ async function readRawPid(env: DaemonEnv): Promise<number | null> {
 //
 // Returns null once the record cannot become healthy — the PID is gone, or the boot budget it was
 // written under has already elapsed (AC 2.5: a recycled PID never goes healthy, and its record is old).
-async function awaitBackendReady(state: DaemonState, env: DaemonEnv, deadline: number): Promise<DaemonState | null> {
+async function awaitBackendReady(state: DaemonRecord, env: DaemonEnv, deadline: number): Promise<DaemonRecord | null> {
   if (await healthy(state, deadline)) return state
   const bootDeadline = Math.min(deadline, Date.now() + Math.max(0, DEFAULT_TIMEOUT_MS - await stateAgeMs(env)))
   while (Date.now() < bootDeadline && isAlive(state.pid)) {
     await delay(LOCK_POLL_MS)
-    if (await healthy(state, deadline)) return (await readDaemonState(env)) ?? state
+    if (await healthy(state, deadline)) return (await readDaemonRecord(env)) ?? state
   }
   return null
+}
+
+function publicState(record: DaemonRecord): DaemonState {
+  return { pid: record.pid, socketPath: record.socketPath, goUrl: record.goUrl }
+}
+
+async function releaseRecord(env: DaemonEnv, record: DaemonRecord): Promise<void> {
+  await releaseState(env, record.pid, record.claimToken)
 }
 
 // Reuse a daemon that is already serving, or clear the state that proves one is not.
@@ -394,11 +423,11 @@ async function awaitBackendReady(state: DaemonState, env: DaemonEnv, deadline: n
 // older daemon. Spawning a second process there would lose the port bind while a superficial health
 // probe went green against the FIRST one.
 async function reuseRunningDaemon(env: DaemonEnv, deadline: number): Promise<DaemonState | null> {
-  const existing = await readDaemonState(env)
+  const existing = await readDaemonRecord(env)
   if (existing) {
     const ready = await awaitBackendReady(existing, env, deadline)
-    if (ready) return ready
-    await releaseState(env, existing.pid)
+    if (ready) return publicState(ready)
+    await releaseRecord(env, existing)
   } else if (existsSync(daemonStatePath(env)) && !(await stateIsLock(env))) {
     await removeDaemonState(env)
   }
@@ -412,19 +441,20 @@ async function reuseRunningDaemon(env: DaemonEnv, deadline: number): Promise<Dae
 async function followWinner(
   env: DaemonEnv,
   deadline: number,
-): Promise<{ state: DaemonState | null; followedPid: number | null }> {
-  let state: DaemonState | null = null
+): Promise<{ state: DaemonState | null; followedPid: number | null; claimToken?: string }> {
+  let state: DaemonRecord | null = null
   for (let i = 0; i < LOCK_POLL_TRIES && !state && Date.now() < deadline; i++) {
     await delay(LOCK_POLL_MS)
-    state = await readDaemonState(env)
+    state = await readDaemonRecord(env)
   }
   if (!state) return { state: null, followedPid: null }
-  return { state: await awaitBackendReady(state, env, deadline), followedPid: state.pid }
+  const ready = await awaitBackendReady(state, env, deadline)
+  return { state: ready ? publicState(ready) : null, followedPid: state.pid, claimToken: state.claimToken }
 }
 
 // Winner path of the spawn lock. Every failure releases the claim this call owns — the sentinel until
 // the child PID is recorded, that PID afterwards — so the lock is never stranded by an exiting CLI.
-async function spawnAndRecord(env: DaemonEnv, deadline: number): Promise<DaemonState> {
+async function spawnAndRecord(env: DaemonEnv, deadline: number, claimToken: string): Promise<DaemonState> {
   const goUrl = env.SAKI_BACKEND_URL ?? DEFAULT_GO_URL
   let owned = LOCK_SENTINEL_PID
   let child: ChildProcess | undefined
@@ -432,23 +462,23 @@ async function spawnAndRecord(env: DaemonEnv, deadline: number): Promise<DaemonS
     child = await spawnDaemon(env)
     if (!child.pid) throw new CliError('saki-backend did not report a PID', EXIT.UNREACHABLE)
     owned = child.pid
-    await writeState({ pid: child.pid, socketPath: null, goUrl }, env)
+    await writeState({ pid: child.pid, socketPath: null, goUrl, claimToken }, env)
     await waitForLiveness(goUrl, { timeoutMs: Math.max(0, deadline - Date.now()) })
     if (!isAlive(child.pid)) throw new CliError('saki-backend exited before startup completed', EXIT.UNREACHABLE)
     // Go records the socket after binding. Only write a fallback record when a compatible backend did
     // not record one, so the parent cannot erase the socket discovered by the child.
-    let state: DaemonState | null = null
+    let state: DaemonRecord | null = null
     for (let attempt = 0; attempt < 10; attempt++) {
-      state = await readDaemonState(env)
+      state = await readDaemonRecord(env)
       if (state?.pid === child.pid) break
       await delay(10)
     }
     if (!state || state.pid !== child.pid) {
-      await writeState({ pid: child.pid, socketPath: null, goUrl }, env)
-      state = await readDaemonState(env)
+      await writeState({ pid: child.pid, socketPath: null, goUrl, claimToken }, env)
+      state = await readDaemonRecord(env)
     }
     if (!state || state.pid !== child.pid) throw new CliError('saki-backend startup was not recorded', EXIT.UNREACHABLE)
-    return state
+    return publicState(state)
   } catch (err) {
     // Reap the child we spawned. Dropping the state file while the process lives would leave an
     // orphan holding the port with nothing tracking its PID (outcome 5.3) — one per failed command.
@@ -456,8 +486,11 @@ async function spawnAndRecord(env: DaemonEnv, deadline: number): Promise<DaemonS
     // make this line kill the CLI, and a stray SIGTERM is far worse than a leaked child.
     if (child?.pid && child.pid !== process.pid && isAlive(child.pid)) {
       try { process.kill(child.pid, 'SIGTERM') } catch { /* exited between the probe and the signal */ }
+      if (isAlive(child.pid)) {
+        try { process.kill(child.pid, 'SIGKILL') } catch { /* exited between the probes */ }
+      }
     }
-    await releaseState(env, owned)
+    await releaseState(env, owned, claimToken)
     throw err
   }
 }
@@ -477,7 +510,8 @@ export async function ensureDaemon(
     // Re-check before spawning: the probes above can have consumed the budget, and spawning a
     // detached backend only to SIGTERM it a moment later on a zero-length liveness wait is pure churn.
     if (Date.now() >= deadline) break
-    if (await acquireStateLock(env)) return await spawnAndRecord(env, deadline)
+    const claimToken = await acquireStateLock(env)
+    if (claimToken !== null) return await spawnAndRecord(env, deadline, claimToken)
     const { state, followedPid } = await followWinner(env, deadline)
     if (state) return state
     if (followedPid !== null) await releaseState(env, followedPid)
