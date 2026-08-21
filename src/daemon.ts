@@ -40,7 +40,6 @@ const LOCK_SENTINEL_PID = -1
 // Authority carried by unix-socket requests. It addresses nothing — it exists so OriginGuard
 // (backend/adapter/originguard.go) sees a loopback Host on socket traffic.
 const SOCKET_HOST = 'localhost'
-const CLAIM_TOKEN_NAME = 'claimToken'
 let releaseSequence = 0
 
 type DaemonRecord = DaemonState & { claimToken?: string }
@@ -512,9 +511,9 @@ export async function ensureDaemon(
     if (Date.now() >= deadline) break
     const claimToken = await acquireStateLock(env)
     if (claimToken !== null) return await spawnAndRecord(env, deadline, claimToken)
-    const { state, followedPid } = await followWinner(env, deadline)
+    const { state, followedPid, claimToken: followedClaimToken } = await followWinner(env, deadline)
     if (state) return state
-    if (followedPid !== null) await releaseState(env, followedPid)
+    if (followedPid !== null) await releaseState(env, followedPid, followedClaimToken)
     else await releaseState(env, LOCK_SENTINEL_PID)
   }
   throw new CliError(

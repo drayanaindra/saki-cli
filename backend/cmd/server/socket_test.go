@@ -277,6 +277,33 @@ func TestWriteDaemonState_ClaimsAStaleRecord(t *testing.T) {
 	}
 }
 
+func TestWriteDaemonState_PreservesClaimToken(t *testing.T) {
+	dir := shortTempDir(t)
+	path := filepath.Join(dir, "backend.state.json")
+	t.Setenv("SAKI_DAEMON_STATE_PATH", path)
+	seed := []byte(`{"pid":999999,"socketPath":null,"goUrl":"http://127.0.0.1:8788","claimToken":"winner-token"}`)
+	if err := os.WriteFile(path, seed, 0o600); err != nil {
+		t.Fatalf("seed tokenized state: %v", err)
+	}
+
+	writeDaemonState("/tmp/x.sock", "127.0.0.1:8788")
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	var state struct {
+		PID       int    `json:"pid"`
+		ClaimToken string `json:"claimToken"`
+	}
+	if err := json.Unmarshal(body, &state); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	if state.PID != os.Getpid() || state.ClaimToken != "winner-token" {
+		t.Fatalf("state = %+v, want current pid and preserved claim token", state)
+	}
+}
+
 func TestClaimDaemonState_SerializesLiveOwner(t *testing.T) {
 	dir := shortTempDir(t)
 	t.Setenv("SAKI_DAEMON_STATE_PATH", filepath.Join(dir, "backend.state.json"))
