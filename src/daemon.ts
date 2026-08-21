@@ -530,21 +530,24 @@ export async function stopDaemon(
   env: DaemonEnv = process.env,
   options: { graceMs?: number } = {},
 ): Promise<'not-running' | 'stopped'> {
-  const state = await readDaemonState(env)
+  const record = await readDaemonRecord(env)
+  const state = record ? publicState(record) : null
   // Liveness, NOT health, decides whether there is anything to stop. A daemon that has stopped
   // answering /api/health is still our process holding the port — calling that "not running" and
   // dropping its state file would orphan it (outcome 5.3) with nothing left tracking its PID.
   if (!state || !isAlive(state.pid)) {
-    // readDaemonState also returns null for the pid:-1 sentinel, i.e. a lock ANOTHER invocation is
+    // readDaemonRecord also returns null for the pid:-1 sentinel, i.e. a lock ANOTHER invocation is
     // currently holding while it spawns. Deleting that would re-open the very double-spawn the
     // O_CREAT|O_EXCL protocol exists to close, so only an unowned, non-lock record is cleaned up.
-    if (!(await stateIsLock(env))) await releaseState(env, state?.pid ?? (await readRawPid(env)) ?? 0)
+    if (!(await stateIsLock(env))) {
+      await releaseState(env, state?.pid ?? (await readRawPid(env)) ?? 0, record?.claimToken)
+    }
     return 'not-running'
   }
   try {
     process.kill(state.pid, 'SIGTERM')
   } catch {
-    await releaseState(env, state.pid)
+    await releaseState(env, state.pid, record?.claimToken)
     return 'not-running'
   }
   const deadline = Date.now() + (options.graceMs ?? STOP_GRACE_MS)
@@ -554,7 +557,7 @@ export async function stopDaemon(
   }
   // Compare-and-delete: while this call was waiting out the grace period, another invocation can have
   // auto-started a replacement and written ITS record. Unlinking that one would orphan a live daemon.
-  await releaseState(env, state.pid)
+  await releaseState(env, state.pid, record?.claimToken)
   return 'stopped'
 }
 

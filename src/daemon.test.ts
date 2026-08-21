@@ -195,6 +195,23 @@ describe('stopDaemon signal escalation', () => {
     await expect(readDaemonState(env)).resolves.toBeNull()
   })
 
+  it('removes a tokenized state record after SIGKILL', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-stop-'))
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    await writeFile(daemonStatePath(env), JSON.stringify({
+      pid: 42435,
+      socketPath: null,
+      goUrl: 'http://go.test',
+      claimToken: 'owner-token',
+    }))
+    const daemon = stoppableDaemon(42435, ['SIGKILL'])
+
+    await expect(stopDaemon(env, { graceMs: 50 })).resolves.toBe('stopped')
+    expect(daemon.signals).toEqual(['SIGTERM', 'SIGKILL'])
+    await expect(readDaemonState(env)).resolves.toBeNull()
+  })
+
+
   // Outcome 5.3 — a hung daemon must still be killed, never reported away as "not running".
   it('stops a live daemon whose backend has stopped answering health', async () => {
     const env = await seedRunningState(4244)
