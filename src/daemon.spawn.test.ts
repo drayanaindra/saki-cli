@@ -155,6 +155,27 @@ describe('ensureDaemon PID tracking and stale-state cleanup', () => {
   })
 
   // AC 2.3 (reclaim half) — a winner that fails must not strand the lock for the next invocation.
+  it('reclaims a tokenized winner record after the winner dies', async () => {
+    const dir = await stateDir()
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    await writeFile(daemonStatePath(env), JSON.stringify({
+      pid: STALE_PID,
+      socketPath: null,
+      goUrl: DEFAULT_GO_URL,
+      claimToken: 'winner-token',
+    }))
+    killThrows(STALE_PID, 'ESRCH')
+    const gate = stubBackend()
+    stubSpawn(gate)
+
+    await expect(ensureDaemon(env, { budgetMs: 2_000 })).resolves.toEqual({
+      pid: process.pid,
+      socketPath: null,
+      goUrl: DEFAULT_GO_URL,
+    })
+    expect(childProcess.spawn).toHaveBeenCalledTimes(1)
+  })
+
   it('removes its own claimed lock when the spawn fails', async () => {
     const dir = await stateDir()
     const env = { SAKI_DAEMON_STATE_DIR: dir }
