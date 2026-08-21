@@ -7,7 +7,8 @@
     {"n":2,"title":"PID tracking + stale-state cleanup","status":"done","steps":{"rplan":{"status":"done","artifact":"tasks/daemon-lifecycle-unix-socket-transport-slice2-plan.md"},"approved":{"status":"done","commit":"3d311b4"},"qa":{"status":"done"},"reviewer":{"status":"done"},"security":{"status":"done"}}},
     {"n":3,"title":"saki backend start|stop|status explicit commands","status":"done","steps":{"rplan":{"status":"n/a"},"approved":{"status":"done","commit":"edfc2e5"},"qa":{"status":"done"},"reviewer":{"status":"done"},"security":{"status":"done"}}},
     {"n":4,"title":"Unix socket transport","status":"done","steps":{"rplan":{"status":"n/a"},"approved":{"status":"done","commit":"addbb7c"},"qa":{"status":"done"},"reviewer":{"status":"done"},"security":{"status":"done"}}}
+    ,{"n":5,"title":"Final daemon lifecycle gate fixes","status":"in-progress","steps":{"rplan":{"status":"done","artifact":"tasks/daemon-lifecycle-unix-socket-transport-final-fix-plan.md"},"approved":{"status":"done","commit":"b1bd2b47ecbbe7e46eaff3502596e65e9d958e5e"},"qa":{"status":"done"},"reviewer":{"status":"pending"},"security":{"status":"done"}}}
   ],
-  "e2e": {"status":"partial","passed":7,"total":8,"blocked":"e2e/opencode-spawn.spec.ts does not terminate in this environment (real opencode model turn); does not exercise any path this PRD changes"},
-  "manual": ["AC 3.5 — stop/start rehydrates an in-flight run (needs a real building run)"]
+  "e2e": {"status":"partial","passed":7,"total":8,"blocked":"Current run hit environment failures in Claude GitLab authentication and Codex SSE; existing opencode real-model test remains unbounded here. None exercise the daemon lifecycle/socket path."},
+  "manual": ["AC 3.5 — stop/start rehydrates an in-flight run; blocked because port 8788 was already occupied by an untracked healthy backend"]
 }
