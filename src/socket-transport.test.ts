@@ -87,6 +87,31 @@ describe('unix socket transport', () => {
     await expect(client.request('/api/health')).rejects.toMatchObject({ code: EXIT.UNREACHABLE })
   })
 
+  it('falls back to TCP when the socket disappears after client construction', async () => {
+    const dir = await mkdtemp('/tmp/saki-sock-race-')
+    const socketPath = join(dir, 'backend.sock')
+    const socketServer = createServer((_, res) => res.end(JSON.stringify({ ok: true, via: 'unix' })))
+    const tcpServer = createServer((_, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, via: 'tcp' }))
+    })
+    await new Promise<void>((resolve) => socketServer.listen(socketPath, resolve))
+    await new Promise<void>((resolve) => tcpServer.listen(0, '127.0.0.1', resolve))
+    const address = tcpServer.address()
+    if (!address || typeof address === 'string') throw new Error('TCP test server did not bind')
+    cleanups.push(async () => {
+      await new Promise<void>((resolve) => socketServer.close(() => resolve()))
+      await new Promise<void>((resolve) => tcpServer.close(() => resolve()))
+      await rm(dir, { recursive: true, force: true })
+    })
+
+    const client = new StudioClient({ env: {}, goUrl: `http://127.0.0.1:${address.port}`, socketPath })
+    await new Promise<void>((resolve) => socketServer.close(() => resolve()))
+    await rm(socketPath, { force: true })
+
+    await expect((await client.request('/api/health')).json()).resolves.toMatchObject({ via: 'tcp' })
+  })
+
   // An explicitly injected fetchImpl (every existing test, and the MCP in-process path) keeps
   // precedence — the socket must not silently override a caller's transport.
   it('leaves an explicit fetchImpl in charge', async () => {

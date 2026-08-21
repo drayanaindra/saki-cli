@@ -160,10 +160,18 @@ export class StudioClient {
   // Same, against an EXPLICIT backend rather than the one the path implies.
   private async requestOn(backend: Backend, path: string, init?: RequestInit, query?: Query): Promise<Response> {
     const origin = this.originOf(backend)
+    const requestUrl = joinUrl(origin, path, query)
     try {
       const fetcher = backend === 'go' && this.socketFetchImpl ? this.socketFetchImpl : this.fetchImpl
-      return await fetcher(joinUrl(origin, path, query), init)
+      return await fetcher(requestUrl, init)
     } catch {
+      if (backend === 'go' && this.socketFetchImpl) {
+        try {
+          return await this.fetchImpl(requestUrl, init)
+        } catch {
+          // Report the original transport failure below.
+        }
+      }
       // A rejected fetch here means the socket never opened (studio down, wrong port, wrong host).
       // Distinguishing that from an HTTP error is the whole point of exit code 3.
       throw new CliError(
