@@ -191,6 +191,29 @@ describe('ensureDaemon PID tracking and stale-state cleanup', () => {
     expect(childProcess.spawn).not.toHaveBeenCalled()
   })
 
+  it('publishes the child PID before a delayed backend becomes healthy', async () => {
+    const dir = await stateDir()
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    const gate = stubBackend()
+    stubSpawn(gate, 1_500)
+
+    const [first, second] = await Promise.all([ensureDaemon(env), ensureDaemon(env)])
+
+    expect(childProcess.spawn).toHaveBeenCalledTimes(1)
+    expect(first.pid).toBe(process.pid)
+    expect(second.pid).toBe(process.pid)
+  })
+
+  it('releases the PID record when startup fails after spawn', async () => {
+    const dir = await stateDir()
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    stubBackend()
+    stubSpawn({ up: false })
+
+    await expect(ensureDaemon(env, { budgetMs: 300 })).rejects.toMatchObject({ code: 3 })
+    await expect(readDaemonState(env)).resolves.toBeNull()
+  })
+
   it('preserves the socket record written by the backend during startup', async () => {
     const dir = await stateDir()
     const env = { SAKI_DAEMON_STATE_DIR: dir }

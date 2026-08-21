@@ -432,6 +432,7 @@ async function spawnAndRecord(env: DaemonEnv, deadline: number): Promise<DaemonS
     child = await spawnDaemon(env)
     if (!child.pid) throw new CliError('saki-backend did not report a PID', EXIT.UNREACHABLE)
     owned = child.pid
+    await writeState({ pid: child.pid, socketPath: null, goUrl }, env)
     await waitForLiveness(goUrl, { timeoutMs: Math.max(0, deadline - Date.now()) })
     if (!isAlive(child.pid)) throw new CliError('saki-backend exited before startup completed', EXIT.UNREACHABLE)
     // Go records the socket after binding. Only write a fallback record when a compatible backend did
