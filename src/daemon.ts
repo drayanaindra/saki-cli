@@ -1,4 +1,4 @@
-import { open, readFile, lstat, stat, unlink, mkdir } from 'node:fs/promises'
+import { open, readFile, lstat, stat, unlink, mkdir, rename, link } from 'node:fs/promises'
 import { constants as FS_CONST, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -38,9 +38,48 @@ const LOCK_SENTINEL_PID = -1
 // Authority carried by unix-socket requests. It addresses nothing — it exists so OriginGuard
 // (backend/adapter/originguard.go) sees a loopback Host on socket traffic.
 const SOCKET_HOST = 'localhost'
-// Truncating write that refuses a symlink at the final component. The state file lives in a shared
-// temp root, so a plain 'w' open would follow a planted link and overwrite its target as this user.
-const STATE_WRITE_FLAGS = FS_CONST.O_WRONLY | FS_CONST.O_CREAT | FS_CONST.O_TRUNC | FS_CONST.O_NOFOLLOW
+let releaseSequence = 0
+
+function releasePath(path: string): string {
+  releaseSequence++
+  return `${path}.release-${process.pid}-${releaseSequence}`
+}
+
+async function readRawPidPath(path: string): Promise<number | null> {
+  try {
+    const raw = JSON.parse(await readFile(path, 'utf8')) as { pid?: unknown }
+    return typeof raw.pid === 'number' ? raw.pid : null
+  } catch {
+    return null
+  }
+}
+
+async function restoreReleasedState(quarantine: string, path: string): Promise<void> {
+  try {
+    await link(quarantine, path)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+  } finally {
+    await unlink(quarantine).catch(() => undefined)
+  }
+}
+
+async function releaseStateFile(path: string, ownedPid: number): Promise<void> {
+  const quarantine = releasePath(path)
+  try {
+    await rename(path, quarantine)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw err
+  }
+  const current = await readRawPidPath(quarantine)
+  if (current === null || current === ownedPid) {
+    await unlink(quarantine).catch(() => undefined)
+    return
+  }
+  await restoreReleasedState(quarantine, path)
+}
+
 
 export function daemonStateDir(env: DaemonEnv = process.env): string {
   const uid = userInfo().uid ?? process.getuid?.() ?? 0
@@ -88,8 +127,9 @@ export async function readDaemonState(env: DaemonEnv = process.env): Promise<Dae
   }
 }
 
-export async function removeDaemonState(env: DaemonEnv = process.env): Promise<void> {
-  await unlink(daemonStatePath(env)).catch(() => undefined)
+export async function removeDaemonState(env: DaemonEnv = process.env, ownedPid?: number): Promise<void> {
+  const capturedPid = ownedPid ?? await readRawPid(env)
+  await releaseState(env, capturedPid ?? 0)
 }
 
 export function binaryPath(env: DaemonEnv = process.env): string | null {
@@ -217,13 +257,28 @@ async function ensurePrivateStateDir(env: DaemonEnv): Promise<void> {
 
 async function writeState(state: DaemonState, env: DaemonEnv): Promise<void> {
   await ensurePrivateStateDir(env)
-  // O_NOFOLLOW, not writeFile: the plain 'w' flag is O_CREAT|O_TRUNC and FOLLOWS symlinks, so a
-  // symlink planted at this path would truncate and overwrite whatever it points at, as this user.
-  const handle = await open(daemonStatePath(env), STATE_WRITE_FLAGS, 0o600)
+  const path = daemonStatePath(env)
+  const existing = await readDaemonState(env)
+  if (existing?.pid === state.pid && existing.socketPath !== null) {
+    state = { ...state, socketPath: existing.socketPath }
+  }
+  const tempPath = `${path}.write-${process.pid}-${++releaseSequence}`
+  // Write a complete record before replacing the live path. This prevents a compare-and-release
+  // quarantine from observing a partially rewritten replacement record.
+  const handle = await open(tempPath, FS_CONST.O_WRONLY | FS_CONST.O_CREAT | FS_CONST.O_EXCL | FS_CONST.O_NOFOLLOW, 0o600)
   try {
     await handle.writeFile(JSON.stringify(state))
-  } finally {
-    await handle.close()
+  } catch (err) {
+    await handle.close().catch(() => undefined)
+    await unlink(tempPath).catch(() => undefined)
+    throw err
+  }
+  await handle.close()
+  try {
+    await rename(tempPath, path)
+  } catch (err) {
+    await unlink(tempPath).catch(() => undefined)
+    throw err
   }
 }
 
@@ -302,21 +357,15 @@ async function stateAgeMs(env: DaemonEnv): Promise<number> {
   }
 }
 
-// Compare-and-delete. An invocation may only drop the state file while it still holds the record it
-// is responsible for: between the read and the unlink another daemon can have written its own state,
-// and deleting THAT record orphans a healthy daemon (nothing left tracks its PID).
+// Remove only the record this invocation owns. Renaming the record out of the live path makes the
+// ownership check and removal atomic with respect to replacement writers; a replacement that arrives
+// during the check remains visible and the old record is restored without overwriting it.
 async function releaseState(env: DaemonEnv, ownedPid: number): Promise<void> {
-  const current = await readRawPid(env)
-  if (current === null || current === ownedPid) await removeDaemonState(env)
+  await releaseStateFile(daemonStatePath(env), ownedPid)
 }
 
 async function readRawPid(env: DaemonEnv): Promise<number | null> {
-  try {
-    const raw = JSON.parse(await readFile(daemonStatePath(env), 'utf8')) as { pid?: unknown }
-    return typeof raw.pid === 'number' ? raw.pid : null
-  } catch {
-    return null
-  }
+  return readRawPidPath(daemonStatePath(env))
 }
 
 // Wait out a daemon that holds a live PID but is not answering yet.
@@ -382,12 +431,20 @@ async function spawnAndRecord(env: DaemonEnv, deadline: number): Promise<DaemonS
     child = await spawnDaemon(env)
     if (!child.pid) throw new CliError('saki-backend did not report a PID', EXIT.UNREACHABLE)
     owned = child.pid
-    await writeState({ pid: child.pid, socketPath: null, goUrl }, env)
     await waitForLiveness(goUrl, { timeoutMs: Math.max(0, deadline - Date.now()) })
     if (!isAlive(child.pid)) throw new CliError('saki-backend exited before startup completed', EXIT.UNREACHABLE)
-    // Re-read rather than reuse the write above: the Go process rewrites the same file once its
-    // listeners are up, and that copy is the one carrying socketPath.
-    const state = await readDaemonState(env)
+    // Go records the socket after binding. Only write a fallback record when a compatible backend did
+    // not record one, so the parent cannot erase the socket discovered by the child.
+    let state: DaemonState | null = null
+    for (let attempt = 0; attempt < 10; attempt++) {
+      state = await readDaemonState(env)
+      if (state?.pid === child.pid) break
+      await delay(10)
+    }
+    if (!state || state.pid !== child.pid) {
+      await writeState({ pid: child.pid, socketPath: null, goUrl }, env)
+      state = await readDaemonState(env)
+    }
     if (!state || state.pid !== child.pid) throw new CliError('saki-backend startup was not recorded', EXIT.UNREACHABLE)
     return state
   } catch (err) {

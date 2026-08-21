@@ -277,6 +277,54 @@ func TestWriteDaemonState_ClaimsAStaleRecord(t *testing.T) {
 	}
 }
 
+func TestClaimDaemonState_SerializesLiveOwner(t *testing.T) {
+	dir := shortTempDir(t)
+	t.Setenv("SAKI_DAEMON_STATE_PATH", filepath.Join(dir, "backend.state.json"))
+
+	if !claimDaemonState() {
+		t.Fatal("first claim failed, want success")
+	}
+	t.Cleanup(releaseDaemonStateClaim)
+	if claimDaemonState() {
+		t.Fatal("second claim succeeded while the first owner was live")
+	}
+
+	releaseDaemonStateClaim()
+	if !claimDaemonState() {
+		t.Fatal("claim after release failed, want success")
+	}
+	releaseDaemonStateClaim()
+}
+
+// A second backend must not unlink an active listener before attempting its own bind. The first
+// listener must remain usable after the second bind is rejected.
+func TestListenUnix_PreservesAnActiveSocket(t *testing.T) {
+	skipOnWindows(t)
+	socketPath := filepath.Join(shortTempDir(t), "backend.sock")
+	client := serveOnSocket(t, socketPath, healthHandler())
+
+	listener, bound, err := listenUnix(socketPath)
+	if err == nil || listener != nil || bound != "" {
+		if listener != nil {
+			_ = listener.Close()
+		}
+		t.Fatalf("second listenUnix = listener %v, bound %q, err %v; want active socket preserved", listener, bound, err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "http://localhost/api/health", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("original socket after rejected bind: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("original socket after rejected bind = HTTP %d, want 200", res.StatusCode)
+	}
+}
+
 // §13 + AC 4.6: an over-long path is rejected by our own guard, BEFORE net.Listen turns it into a
 // bare EINVAL. Disabling the socket must not be fatal — TCP still serves.
 func TestListenUnix_RejectsOverLongPathBeforeListen(t *testing.T) {

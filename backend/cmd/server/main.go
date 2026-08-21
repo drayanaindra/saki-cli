@@ -156,6 +156,12 @@ func main() {
 		}
 	}()
 
+	// Claim the daemon state before binding either listener. The claim serializes normal backend starts,
+	// so a second process cannot pass the ownership check while this process is replacing a stale socket.
+	if !claimDaemonState() {
+		_ = tcp.Close()
+		log.Fatalf("daemon state already belongs to another backend")
+	}
 	unix, socketPath, err := listenUnix(daemonSocketPath())
 	if err != nil {
 		// A socket the CLI cannot get is a DEGRADATION, not a startup failure: the TCP listener above
@@ -163,6 +169,7 @@ func main() {
 		log.Printf("unix socket disabled: %v", err)
 	}
 	if unix != nil {
+		// TCP serving starts after the complete state record is published.
 		go func() {
 			if err := http.Serve(unix, mux); err != nil && err != http.ErrServerClosed {
 				log.Printf("unix serve: %v", err)
@@ -176,13 +183,16 @@ func main() {
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 	<-sig
 	if unix != nil {
-		_ = unix.Close()
+		// Unlink before closing. A successor can claim the state only after this cleanup, and if it binds
+		// after the unlink its path is never removed by this process.
 		_ = os.Remove(socketPath)
+		_ = unix.Close()
 	}
 	_ = tcp.Close()
 	// §10 rule 6: this cleanup runs in the handler BODY, never via defer — defer does not execute
 	// through os.Exit.
 	removeOwnDaemonState()
+	releaseDaemonStateClaim()
 	os.Exit(0)
 }
 
@@ -194,6 +204,72 @@ func daemonStatePath() string {
 }
 
 func daemonSocketPath() string { return filepath.Join(filepath.Dir(daemonStatePath()), "backend.sock") }
+
+var daemonClaimFile *os.File
+
+// claimDaemonState serializes backend startup without replacing the CLI's spawn sentinel. The claim file
+// is held open for the lifetime of this process; a dead owner leaves a reclaimable PID record.
+func claimDaemonState() bool {
+	path := daemonStatePath() + ".bind-lock"
+	if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
+		return false
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+		if err == nil {
+			if _, writeErr := fmt.Fprintf(file, "%d", os.Getpid()); writeErr != nil {
+				_ = file.Close()
+				_ = os.Remove(path)
+				return false
+			}
+			daemonClaimFile = file
+			return true
+		}
+		if !os.IsExist(err) {
+			return false
+		}
+		quarantine := fmt.Sprintf("%s.stale-%d-%d", path, os.Getpid(), time.Now().UnixNano())
+		if renameErr := os.Rename(path, quarantine); renameErr != nil {
+			if os.IsNotExist(renameErr) {
+				continue
+			}
+			return false
+		}
+		if processAlive(readClaimPID(quarantine)) {
+			if restoreErr := os.Link(quarantine, path); restoreErr != nil && !os.IsExist(restoreErr) {
+				return false
+			}
+			_ = os.Remove(quarantine)
+			return false
+		}
+		_ = os.Remove(quarantine)
+	}
+	return false
+}
+
+func readClaimPID(path string) int {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var pid int
+	_, _ = fmt.Sscanf(string(body), "%d", &pid)
+	return pid
+}
+
+func releaseDaemonStateClaim() {
+	if daemonClaimFile == nil {
+		return
+	}
+	path := daemonStatePath() + ".bind-lock"
+	quarantine := fmt.Sprintf("%s.release-%d-%d", path, os.Getpid(), time.Now().UnixNano())
+	if err := os.Rename(path, quarantine); err != nil && !os.IsNotExist(err) {
+		return
+	}
+	_ = daemonClaimFile.Close()
+	daemonClaimFile = nil
+	_ = os.Remove(quarantine)
+}
 
 // listenUnix binds the owner-local unix socket that sits alongside the loopback TCP listener
 // (🔒 INVARIANT 1 — the socket is owner-only, never off-host).
@@ -218,15 +294,27 @@ func listenUnix(socketPath string) (net.Listener, string, error) {
 	if err := ensurePrivateDir(filepath.Dir(socketPath)); err != nil {
 		return nil, "", err
 	}
-	if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
-		return nil, "", err
+	listener, err := bindUnix(socketPath)
+	if err != nil && errors.Is(err, syscall.EADDRINUSE) {
+		// Move the existing inode out of the bind path atomically. Probe the quarantine path, not the
+		// live name, so a successor cannot appear between the liveness check and cleanup.
+		quarantine := fmt.Sprintf("%s.stale-%d-%d", socketPath, os.Getpid(), time.Now().UnixNano())
+		if renameErr := os.Rename(socketPath, quarantine); renameErr != nil {
+			return nil, "", renameErr
+		}
+		probe, probeErr := net.DialTimeout("unix", quarantine, 50*time.Millisecond)
+		if probeErr == nil {
+			_ = probe.Close()
+			if restoreErr := restoreSocket(quarantine, socketPath); restoreErr != nil {
+				return nil, "", restoreErr
+			}
+			return nil, "", fmt.Errorf("unix socket already in use: %s", socketPath)
+		}
+		if removeErr := os.Remove(quarantine); removeErr != nil && !os.IsNotExist(removeErr) {
+			return nil, "", removeErr
+		}
+		listener, err = bindUnix(socketPath)
 	}
-	// Bind under a private umask so the inode is never even transiently group/other-connectable. The
-	// Chmod below is the guarantee, but between bind and Chmod the mode is 0777 &^ umask — under a
-	// permissive umask (0002/0000, seen in CI images) that window is genuinely connectable.
-	restore := syscall.Umask(0o077)
-	listener, err := net.Listen("unix", socketPath)
-	syscall.Umask(restore)
 	if err != nil {
 		return nil, "", err
 	}
@@ -236,6 +324,20 @@ func listenUnix(socketPath string) (net.Listener, string, error) {
 		return nil, "", err
 	}
 	return listener, socketPath, nil
+}
+
+func restoreSocket(quarantine, socketPath string) error {
+	return os.Rename(quarantine, socketPath)
+}
+
+func bindUnix(socketPath string) (net.Listener, error) {
+	// Bind under a private umask so the inode is never even transiently group/other-connectable. The
+	// Chmod below is the guarantee, but between bind and Chmod the mode is 0777 &^ umask — under a
+	// permissive umask (0002/0000, seen in CI images) that window is genuinely connectable.
+	restore := syscall.Umask(0o077)
+	listener, err := net.Listen("unix", socketPath)
+	syscall.Umask(restore)
+	return listener, err
 }
 
 // ensurePrivateDir creates the UID-scoped state directory and proves this user exclusively owns it.
@@ -293,16 +395,29 @@ func writeDaemonState(socketPath, addr string) {
 		log.Printf("daemon state: %v", err)
 		return
 	}
-	// O_NOFOLLOW: os.WriteFile follows a symlink at this path and would truncate its target as this
-	// user. The state dir check above makes that unreachable; this makes it impossible.
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
+	// Write a complete record before replacing the live path. This keeps shutdown's quarantine restore
+	// from sharing an inode with a concurrent state writer.
+	tempPath := fmt.Sprintf("%s.write-%d-%d", path, os.Getpid(), time.Now().UnixNano())
+	// O_NOFOLLOW: a planted symlink at the temporary path must not redirect this write.
+	file, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		log.Printf("daemon state: %v", err)
 		return
 	}
-	defer file.Close()
 	if _, err := file.Write(body); err != nil {
 		log.Printf("daemon state: %v", err)
+		_ = file.Close()
+		_ = os.Remove(tempPath)
+		return
+	}
+	if err := file.Close(); err != nil {
+		log.Printf("daemon state: %v", err)
+		_ = os.Remove(tempPath)
+		return
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		log.Printf("daemon state: %v", err)
+		_ = os.Remove(tempPath)
 	}
 }
 
@@ -313,10 +428,21 @@ func writeDaemonState(socketPath, addr string) {
 // orphan outcome 5.3 forbids, and the CLI already guards its own deletes the same way
 // (releaseState, src/daemon.ts).
 func removeOwnDaemonState() {
-	if recordedPID(daemonStatePath()) != os.Getpid() {
+	path := daemonStatePath()
+	quarantine := fmt.Sprintf("%s.release-%d-%d", path, os.Getpid(), time.Now().UnixNano())
+	if err := os.Rename(path, quarantine); err != nil {
 		return
 	}
-	_ = os.Remove(daemonStatePath())
+	if recordedPID(quarantine) == os.Getpid() {
+		_ = os.Remove(quarantine)
+		return
+	}
+	// A successor was already recorded when the rename happened. Restore that record without replacing
+	// a newer record that may have been written while this process checked ownership.
+	if err := os.Link(quarantine, path); err != nil && !os.IsExist(err) {
+		log.Printf("daemon state restore: %v", err)
+	}
+	_ = os.Remove(quarantine)
 }
 
 // recordedPID is the pid the state file currently names, or 0 when there is no readable record.

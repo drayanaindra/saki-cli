@@ -191,6 +191,31 @@ describe('ensureDaemon PID tracking and stale-state cleanup', () => {
     expect(childProcess.spawn).not.toHaveBeenCalled()
   })
 
+  it('preserves the socket record written by the backend during startup', async () => {
+    const dir = await stateDir()
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    const socketPath = join(dir, 'backend.sock')
+    let healthCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      healthCalls++
+      if (healthCalls === 1) throw new Error('connect ECONNREFUSED')
+      if (healthCalls < 4) throw new Error('backend still binding')
+      await writeFile(daemonStatePath(env), JSON.stringify({
+        pid: process.pid,
+        socketPath,
+        goUrl: DEFAULT_GO_URL,
+      }))
+      return { ok: true, status: 200, json: async () => ({ ok: true }) } as unknown as Response
+    }))
+    stubSpawn({ up: true }, 0)
+
+    await expect(ensureDaemon(env)).resolves.toEqual({
+      pid: process.pid,
+      socketPath,
+      goUrl: DEFAULT_GO_URL,
+    })
+  })
+
   // AC 4.3 — a crashed daemon leaves state naming a socket that is gone. Auto-start must replace it
   // promptly rather than stalling on the dead path, and the record it leaves carries no stale socket.
   it('replaces a dead daemon whose state names a removed socket', async () => {
