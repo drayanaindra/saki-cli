@@ -542,6 +542,10 @@ export async function stopDaemon(
     }
     return 'not-running'
   }
+  if (!(await probeBackendHealth(state.goUrl))) {
+    await releaseState(env, state.pid, record?.claimToken)
+    return 'not-running'
+  }
   try {
     process.kill(state.pid, 'SIGTERM')
   } catch {

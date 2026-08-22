@@ -179,6 +179,7 @@ describe('stopDaemon signal escalation', () => {
   it('terminates on SIGTERM and removes the state file', async () => {
     const env = await seedRunningState(4242)
     const daemon = stoppableDaemon(4242, ['SIGTERM'])
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
 
     await expect(stopDaemon(env)).resolves.toBe('stopped')
     expect(daemon.signals).toEqual(['SIGTERM'])
@@ -189,6 +190,7 @@ describe('stopDaemon signal escalation', () => {
   it('escalates to SIGKILL when SIGTERM is ignored', async () => {
     const env = await seedRunningState(4243)
     const daemon = stoppableDaemon(4243, ['SIGKILL'])
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
 
     await expect(stopDaemon(env, { graceMs: 50 })).resolves.toBe('stopped')
     expect(daemon.signals).toEqual(['SIGTERM', 'SIGKILL'])
@@ -205,6 +207,7 @@ describe('stopDaemon signal escalation', () => {
       claimToken: 'owner-token',
     }))
     const daemon = stoppableDaemon(42435, ['SIGKILL'])
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
 
     await expect(stopDaemon(env, { graceMs: 50 })).resolves.toBe('stopped')
     expect(daemon.signals).toEqual(['SIGTERM', 'SIGKILL'])
@@ -212,36 +215,31 @@ describe('stopDaemon signal escalation', () => {
   })
 
 
-  // Outcome 5.3 — a hung daemon must still be killed, never reported away as "not running".
-  it('stops a live daemon whose backend has stopped answering health', async () => {
+  it('does not signal a recycled PID whose backend is unhealthy', async () => {
     const env = await seedRunningState(4244)
-    const daemon = stoppableDaemon(4244, ['SIGTERM'])
+    const daemon = stoppableDaemon(4244, ['SIGTERM', 'SIGKILL'])
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('connect ECONNREFUSED') }))
 
-    await expect(stopDaemon(env)).resolves.toBe('stopped')
-    expect(daemon.signals).toEqual(['SIGTERM'])
+    await expect(stopDaemon(env)).resolves.toBe('not-running')
+    expect(daemon.signals).toEqual([])
     await expect(readDaemonState(env)).resolves.toBeNull()
   })
 
-  // 🔒 INVARIANT 2 — a spawn lock another invocation is HOLDING is not this call's to clean up.
-  // readDaemonState returns null for the pid:-1 sentinel, so a naive "no state → tidy up" would
-  // delete the lock mid-spawn and re-open the double-spawn O_CREAT|O_EXCL exists to close.
-  it('leaves a spawn lock held by another invocation alone', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-stop-'))
-    const env = { SAKI_DAEMON_STATE_DIR: dir }
-    const held = JSON.stringify({ pid: -1, socketPath: null, goUrl: 'http://go.test' })
-    await writeFile(daemonStatePath(env), held)
+  it('does not signal a live PID whose backend has stopped answering health', async () => {
+    const env = await seedRunningState(42445)
+    const daemon = stoppableDaemon(42445, ['SIGTERM', 'SIGKILL'])
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({ ok: false }) })))
 
     await expect(stopDaemon(env)).resolves.toBe('not-running')
-    await expect(readFile(daemonStatePath(env), 'utf8')).resolves.toBe(held)
+    expect(daemon.signals).toEqual([])
+    await expect(readDaemonState(env)).resolves.toBeNull()
   })
 
-  // Outcome 5.3 — while this call waited out the grace period another invocation auto-started a
-  // replacement and wrote ITS record. Deleting that orphans a live daemon.
   it('does not delete a replacement daemon written while it was stopping', async () => {
     const env = await seedRunningState(4245)
     const replacement = { pid: 4246, socketPath: null, goUrl: 'http://go.test' }
     let alive = true
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
     vi.spyOn(process, 'kill').mockImplementation(((target: number, signal: NodeJS.Signals | 0) => {
       if (target !== 4245) return true
       if (signal === 0) {
@@ -260,4 +258,18 @@ describe('stopDaemon signal escalation', () => {
     await expect(stopDaemon(env, { graceMs: 50 })).resolves.toBe('stopped')
     await expect(readDaemonState(env)).resolves.toEqual(replacement)
   })
+
+  // 🔒 INVARIANT 2 — a spawn lock another invocation is HOLDING is not this call's to clean up.
+  // readDaemonState returns null for the pid:-1 sentinel, so a naive "no state → tidy up" would
+  // delete the lock mid-spawn and re-open the double-spawn O_CREAT|O_EXCL exists to close.
+  it('leaves a spawn lock held by another invocation alone', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'saki-daemon-stop-'))
+    const env = { SAKI_DAEMON_STATE_DIR: dir }
+    const held = JSON.stringify({ pid: -1, socketPath: null, goUrl: 'http://go.test' })
+    await writeFile(daemonStatePath(env), held)
+
+    await expect(stopDaemon(env)).resolves.toBe('not-running')
+    await expect(readFile(daemonStatePath(env), 'utf8')).resolves.toBe(held)
+  })
+
 })
