@@ -15,6 +15,10 @@
     },
     "qa": {
       "status": "done"
+    },
+    "reviewer": {
+      "status": "done",
+      "lastCommit": "50c5f36"
     }
   }
 }
