@@ -12,6 +12,9 @@
     "approved": {
       "status": "done",
       "lastCommit": "f7a50fa"
+    },
+    "qa": {
+      "status": "done"
     }
   }
 }
