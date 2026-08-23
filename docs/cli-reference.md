@@ -272,6 +272,16 @@ opencode plugin @saketek/saki-builder --global   # run with XDG_CONFIG_HOME=<dir
 `CLAUDE_CONFIG_DIR=<dir>` (claude), `XDG_CONFIG_HOME=<dir>` (opencode → reads `<dir>/opencode/`),
 `CODEX_HOME=<dir>/codex` (codex). One profile dir can hold all three side by side.
 
+**Known limitation — claude profile isolation is best-effort.** codex (`CODEX_HOME`) and opencode
+(`XDG_CONFIG_HOME`) genuinely isolate `plugin` state per profile; claude does not. Hand-verified
+against claude 2.1.235: `plugin marketplace add`/`plugin install` write their install record
+(`installed_plugins.json` — version, installPath, git SHA) only to the real `~/.claude`, for every
+`--scope` (`user`, `project`, `local`) and regardless of `CLAUDE_CONFIG_DIR`. `--scope
+project`/`--scope local` only add an enabled-plugin pointer to the target cwd's own
+`.claude/settings.json` — the install itself stays global. `saki init-env --engine claude --profile
+<dir>` still pins `CLAUDE_CONFIG_DIR` (correct given codex/opencode's contract), but that pin cannot
+redirect where claude's plugin state lands — there is currently no upstream mechanism that does.
+
 **An unprovisioned engine is refused at the spawn** — exit `1`, with the fix in the message, before
 anything launches:
 

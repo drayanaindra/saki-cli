@@ -147,6 +147,12 @@ The plugin carries the skills, agents and hooks. **Do not also symlink them** �
 version-skewed copy of every skill. `scripts/install-codex-skills.sh` is a checker; its `--symlink`
 fallback exists only for an ephemeral pinned profile where a marketplace plugin is impractical.
 
+**Known limitation — claude profile isolation is best-effort.** Unlike codex/opencode, claude's
+`plugin marketplace add`/`plugin install` write their install record only to the real `~/.claude`,
+for every `--scope` and regardless of `CLAUDE_CONFIG_DIR` (hand-verified against claude 2.1.235).
+`saki init-env --engine claude --profile <dir>` still pins `CLAUDE_CONFIG_DIR`, but that pin cannot
+redirect claude's plugin state — see `docs/cli-reference.md` § Known limitations.
+
 **A run whose engine is not provisioned is refused at the spawn**, before anything is launched — exit
 `1`, with the fix in the error text:
 

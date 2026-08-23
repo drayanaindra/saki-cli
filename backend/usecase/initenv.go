@@ -270,6 +270,14 @@ var OpencodeProvisionArgv = [][]string{
 }
 
 // ClaudeProvisionArgv is the fixed user-scope installer contract for the Claude profile.
+//
+// Known limitation: unlike CodexProvisionArgv/OpencodeProvisionArgv, this cannot be truly isolated
+// per profile. Hand-verified against claude 2.1.235: `plugin marketplace add`/`plugin install` write
+// their install record (installed_plugins.json) only to the real ~/.claude, for every --scope (user,
+// project, local) and regardless of CLAUDE_CONFIG_DIR — there is no upstream mechanism to redirect
+// it. engineProfileEnv still pins CLAUDE_CONFIG_DIR here (consistent with codex/opencode's contract,
+// and it's the only lever this repo has), but a claude --profile run resolves against the operator's
+// real ~/.claude regardless. See docs/cli-reference.md § Known limitations.
 var ClaudeProvisionArgv = [][]string{
 	{"claude", "plugin", "marketplace", "add", "https://gitlab.com/drayanaindra/saki-builder.git", "--scope", "user"},
 	{"claude", "plugin", "install", "saki-builder@saketek", "--scope", "user"},
