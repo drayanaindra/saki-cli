@@ -3,14 +3,15 @@
   "plan": "tasks/saki-doctor-claude-skill-parity-plan.md",
   "branch": "main",
   "item": "I3",
-  "updated": "2026-08-23",
+  "updated": "2026-08-24",
   "steps": {
     "rplan": {
       "status": "done",
       "artifact": "tasks/saki-doctor-claude-skill-parity-plan.md"
     },
     "approved": {
-      "status": "in-progress"
+      "status": "done",
+      "lastCommit": "f7a50fa"
     }
   }
 }
