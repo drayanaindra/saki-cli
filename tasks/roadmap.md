@@ -10,7 +10,7 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 - **Plan track** (Improvement · Bug) → skip the PRD, go straight to `/saki-builder:rplan`.
 
 ### F1 · Daemon lifecycle + unix-socket transport
-**Type:** Feature · **Track:** PRD · **Status:** In-progress · **Owner:** unassigned · **Updated:** 2026-08-16
+**Type:** Feature · **Track:** PRD · **Status:** Shipped · **Owner:** unassigned · **Updated:** 2026-08-23
 **Goal:** `saki` starts and supervises its own backend instead of requiring a hand-launched `./dist/saki-backend &`, and can talk to it over a unix socket rather than a TCP port.
 **Child PRD:** prd-daemon-lifecycle-unix-socket-transport.md
 
