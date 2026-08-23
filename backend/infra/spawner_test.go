@@ -26,8 +26,10 @@ func writeFakeSh(t *testing.T, exitCode string) string {
 func claudeProvenProfile(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	installPath := t.TempDir()
+	writeSkillFile(t, installPath, "build")
 	writeClaudeProfile(t, dir,
-		`{"plugins":{"saketek@saki-builder":[{"version":"0.5.0"}]}}`,
+		`{"plugins":{"saketek@saki-builder":[{"installPath":"`+installPath+`","version":"0.5.0"}]}}`,
 		`{"enabledPlugins":{"saketek@saki-builder":true}}`,
 	)
 	return dir

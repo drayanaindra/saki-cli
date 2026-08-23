@@ -53,3 +53,9 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 **Type:** Improvement · **Track:** Plan · **Status:** Shipped · **Owner:** unassigned · **Updated:** 2026-08-16
 **What:** `saki artifacts` depends on a companion orchestrator that is not part of this repo. A dependency-free loopback stub now serves the artifact, health, and session routes so the command can be exercised end-to-end here without weakening the real studio's session gate.
 **Child plan:** tasks/i2-artifacts-companion-orchestrator-plan.md
+
+### I3 · `saki doctor` — verify per-skill coverage, not just plugin presence
+**Type:** Improvement · **Track:** Plan · **Status:** In-progress · **Owner:** unassigned · **Updated:** 2026-08-23
+**What:** doctor / spawn-preflight only prove the saki-builder plugin is installed and enabled — never that the SPECIFIC skill/command a run is about to invoke actually exists in that install. Add per-command / plugin-version verification so a stale or partial install is caught before a run, not after.
+**Repro / Context:** `backend/infra/claude.go:35` `ClaudeProfileProof` checks `installed_plugins.json` + `settings.json` only (plugin-level, any known id). `backend/infra/opencode.go:37` `OpencodePluginProof` checks `opencode.json` lists the plugin string only. `backend/infra/codex.go:60` `CodexSkillsProof`'s loose-install fallback treats presence of ONE sentinel file (`skills/build/SKILL.md`, `codexProofSkill`) as proof ALL saki-builder skills are present. No version pin exists anywhere (backend or `package.json`). Consequence: a stale/partial saki-builder install passes `saki doctor` `ok`, then a run silently fails when the model can't find the invoked command (the exact silent-no-op class `ErrEngineNotProvisioned` exists to prevent, just not reached for this case).
+**Child plan:** tasks/saki-doctor-claude-skill-parity-plan.md

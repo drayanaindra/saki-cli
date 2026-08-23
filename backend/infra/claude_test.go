@@ -41,6 +41,9 @@ func TestResolveClaudeProfile_PresentCanonical(t *testing.T) {
 	if plugin.Version != "0.5.0" {
 		t.Fatalf("resolved plugin version = %q, want 0.5.0", plugin.Version)
 	}
+	if plugin.InstallPath != "/tmp/saki-builder" {
+		t.Fatalf("resolved plugin installPath = %q, want /tmp/saki-builder", plugin.InstallPath)
+	}
 }
 
 func TestResolveClaudeProfile_FailClosedCases(t *testing.T) {
@@ -123,10 +126,63 @@ func TestResolveClaudeProfile_Precedence(t *testing.T) {
 	}
 }
 
+// writeSkillFile creates <dir>/skills/<name>/SKILL.md so a claude installPath fixture has a real
+// sentinel file to stat — the codex twin of this pattern already exists via writeCodexProfile's
+// config.toml; claude's proof reads a skill FILE, not a config table, so the fixture writes one.
+func writeSkillFile(t *testing.T, installPath, name string) {
+	t.Helper()
+	dir := filepath.Join(installPath, "skills", name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+name+"\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClaudeProfileProof_SkillMissing(t *testing.T) {
+	dir := t.TempDir()
+	installPath := filepath.Join(t.TempDir(), "cache", "saketek", "saki-builder", "0.30.2")
+	if err := os.MkdirAll(installPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeClaudeProfile(t, dir,
+		`{"plugins":{"saketek@saki-builder":[{"installPath":"`+installPath+`","version":"0.30.2"}]}}`,
+		`{"enabledPlugins":{"saketek@saki-builder":true}}`,
+	)
+	// installPath exists but carries no skills/build/SKILL.md — a plugin installed+enabled with a
+	// stale/partial cache, the exact case the old proof could not see.
+	err := ClaudeProfileProof(&dir)
+	if err == nil {
+		t.Fatal("proof succeeded for a claude profile missing skills/build/SKILL.md")
+	}
+	if !errors.Is(err, usecase.ErrEngineNotProvisioned) {
+		t.Fatalf("proof error = %v, want it to wrap ErrEngineNotProvisioned", err)
+	}
+	if !errors.Is(err, ErrClaudeSkillMissing) {
+		t.Fatalf("proof error = %v, want it to wrap ErrClaudeSkillMissing", err)
+	}
+}
+
+func TestClaudeProfileProof_SkillPresent_Succeeds(t *testing.T) {
+	dir := t.TempDir()
+	installPath := filepath.Join(t.TempDir(), "cache", "saketek", "saki-builder", "0.30.2")
+	writeSkillFile(t, installPath, "build")
+	writeClaudeProfile(t, dir,
+		`{"plugins":{"saketek@saki-builder":[{"installPath":"`+installPath+`","version":"0.30.2"}]}}`,
+		`{"enabledPlugins":{"saketek@saki-builder":true}}`,
+	)
+	if err := ClaudeProfileProof(&dir); err != nil {
+		t.Fatalf("proof failed for a fully-provisioned claude profile: %v", err)
+	}
+}
+
 func TestResolveClaudeProfile_ReadOnly(t *testing.T) {
 	dir := t.TempDir()
+	installPath := t.TempDir()
+	writeSkillFile(t, installPath, "build")
 	writeClaudeProfile(t, dir,
-		`{"plugins":{"saketek@saki-builder":[{"version":"1"}]}}`,
+		`{"plugins":{"saketek@saki-builder":[{"installPath":"`+installPath+`","version":"1"}]}}`,
 		`{"enabledPlugins":{"saketek@saki-builder":true}}`,
 	)
 	installedPath, settingsPath := claudeProfilePaths(&dir)
@@ -175,8 +231,10 @@ func TestClaudeProfilePathsUseNativeDefault(t *testing.T) {
 
 func TestClaudeProfileFingerprintCoversOnlyProofFiles(t *testing.T) {
 	dir := t.TempDir()
+	installPath := t.TempDir()
+	writeSkillFile(t, installPath, "build")
 	writeClaudeProfile(t, dir,
-		`{"plugins":{"saketek@saki-builder":[{"version":"1"}]}}`,
+		`{"plugins":{"saketek@saki-builder":[{"installPath":"`+installPath+`","version":"1"}]}}`,
 		`{"enabledPlugins":{"saketek@saki-builder":true}}`,
 	)
 	base := profileFingerprint(domain.EngineClaude, &dir)
@@ -186,11 +244,19 @@ func TestClaudeProfileFingerprintCoversOnlyProofFiles(t *testing.T) {
 	if got := profileFingerprint(domain.EngineClaude, &dir); got != base {
 		t.Fatal("unrelated Claude profile file changed the fingerprint")
 	}
-	installed, _ := claudeProfilePaths(&dir)
-	if err := os.WriteFile(installed, []byte(`{"plugins":{"saketek@saki-builder":[{"version":"2"}]}}`), 0o644); err != nil {
+	skillFile := filepath.Join(installPath, "skills", "build", "SKILL.md")
+	if err := os.WriteFile(skillFile, []byte("---\nname: build\n---\nchanged\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := profileFingerprint(domain.EngineClaude, &dir); got == base {
+	afterSkillChange := profileFingerprint(domain.EngineClaude, &dir)
+	if afterSkillChange == base {
+		t.Fatal("skills/build/SKILL.md change did not change the fingerprint")
+	}
+	installed, _ := claudeProfilePaths(&dir)
+	if err := os.WriteFile(installed, []byte(`{"plugins":{"saketek@saki-builder":[{"installPath":"`+installPath+`","version":"2"}]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := profileFingerprint(domain.EngineClaude, &dir); got == afterSkillChange {
 		t.Fatal("installed_plugins.json change did not change the fingerprint")
 	}
 	changed := profileFingerprint(domain.EngineClaude, &dir)

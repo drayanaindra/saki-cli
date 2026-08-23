@@ -163,6 +163,9 @@ func profileFingerprint(engine domain.RunEngine, profile *string) string {
 	case domain.EngineClaude:
 		installed, settings := claudeProfilePaths(profile)
 		paths = []string{installed, settings}
+		if plugin, err := resolveClaudeProfile(profile); err == nil && plugin.InstallPath != "" {
+			paths = append(paths, filepath.Join(plugin.InstallPath, "skills", codexProofSkill, "SKILL.md"))
+		}
 	default:
 		return ""
 	}
