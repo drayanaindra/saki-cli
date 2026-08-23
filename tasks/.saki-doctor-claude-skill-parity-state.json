@@ -19,6 +19,10 @@
     "reviewer": {
       "status": "done",
       "lastCommit": "50c5f36"
+    },
+    "wrap": {
+      "status": "done",
+      "lastCommit": "9c04b77"
     }
   }
 }
