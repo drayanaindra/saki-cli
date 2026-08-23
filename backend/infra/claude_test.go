@@ -177,6 +177,25 @@ func TestClaudeProfileProof_SkillPresent_Succeeds(t *testing.T) {
 	}
 }
 
+// TestClaudeProfileProof_EmptyInstallPath guards the fail-CLOSED requirement for an installed+enabled
+// record with no installPath (a pre-installPath Claude Code version, or a hand-edited profile) — an
+// empty string must never reach filepath.Join unchecked, since that resolves to a CWD-relative
+// "skills/build/SKILL.md" that could coincidentally exist and fail OPEN.
+func TestClaudeProfileProof_EmptyInstallPath(t *testing.T) {
+	dir := t.TempDir()
+	writeClaudeProfile(t, dir,
+		`{"plugins":{"saketek@saki-builder":[{"version":"1"}]}}`, // no installPath field
+		`{"enabledPlugins":{"saketek@saki-builder":true}}`,
+	)
+	err := ClaudeProfileProof(&dir)
+	if err == nil {
+		t.Fatal("proof succeeded for a claude profile with no installPath")
+	}
+	if !errors.Is(err, usecase.ErrEngineNotProvisioned) || !errors.Is(err, ErrClaudeSkillMissing) {
+		t.Fatalf("proof error = %v, want it to wrap ErrEngineNotProvisioned and ErrClaudeSkillMissing", err)
+	}
+}
+
 func TestResolveClaudeProfile_ReadOnly(t *testing.T) {
 	dir := t.TempDir()
 	installPath := t.TempDir()
@@ -205,15 +224,20 @@ func TestResolveClaudeProfile_ReadOnly(t *testing.T) {
 }
 
 func TestEngineProfileProof_ClaudeMatchesDirectProof(t *testing.T) {
+	installPath := t.TempDir()
+	writeSkillFile(t, installPath, "build")
 	dir := t.TempDir()
 	writeClaudeProfile(t, dir,
-		`{"plugins":{"saketek@saki-builder":[{"version":"1"}]}}`,
+		`{"plugins":{"saketek@saki-builder":[{"installPath":"`+installPath+`","version":"1"}]}}`,
 		`{"enabledPlugins":{"saketek@saki-builder":true}}`,
 	)
 	want := ClaudeProfileProof(&dir)
 	got := EngineProfileProof(domain.EngineClaude, &dir)
 	if (want == nil) != (got == nil) {
 		t.Fatalf("direct proof = %v, dispatcher proof = %v", want, got)
+	}
+	if want != nil {
+		t.Fatalf("fully-provisioned profile must succeed, got %v", want)
 	}
 }
 

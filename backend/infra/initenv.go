@@ -157,14 +157,14 @@ func profileFingerprint(engine domain.RunEngine, profile *string) string {
 	switch engine {
 	case domain.EngineCodex:
 		home := codexHomePath(profile)
-		paths = []string{filepath.Join(home, "config.toml"), filepath.Join(home, "skills", codexProofSkill, "SKILL.md")}
+		paths = []string{filepath.Join(home, "config.toml"), filepath.Join(home, "skills", sentinelProofSkill, "SKILL.md")}
 	case domain.EngineOpencode:
 		paths = []string{opencodeConfigPath(profile)}
 	case domain.EngineClaude:
 		installed, settings := claudeProfilePaths(profile)
 		paths = []string{installed, settings}
 		if plugin, err := resolveClaudeProfile(profile); err == nil && plugin.InstallPath != "" {
-			paths = append(paths, filepath.Join(plugin.InstallPath, "skills", codexProofSkill, "SKILL.md"))
+			paths = append(paths, filepath.Join(plugin.InstallPath, "skills", sentinelProofSkill, "SKILL.md"))
 		}
 	default:
 		return ""

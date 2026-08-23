@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/drayanaindra/saki-cli/backend/domain"
@@ -57,6 +58,32 @@ func TestDoctorPreflightAgreement(t *testing.T) {
 			// SpawnSpec entry point, not only through the ProfileProof half the four cases above cover.
 			name: "codex binary absent", engine: domain.EngineCodex, wantOK: false, binaryAbsent: true,
 			fixture: func(t *testing.T, dir string) {}, // profile is irrelevant — BinaryCheck short-circuits first
+		},
+		{
+			// claude had NO case here before this skill-file check existed — the exact function both
+			// preflight and doctor now reach for claude changed shape, and this invariant test exists
+			// precisely to catch the two diverging on it.
+			name: "claude provisioned", engine: domain.EngineClaude, wantOK: true,
+			fixture: func(t *testing.T, dir string) {
+				installPath := filepath.Join(dir, "cache", "saketek", "saki-builder", "0.30.2")
+				writeSkillFile(t, installPath, "build")
+				writeClaudeProfile(t, dir,
+					`{"plugins":{"saketek@saki-builder":[{"installPath":"`+installPath+`","version":"0.30.2"}]}}`,
+					`{"enabledPlugins":{"saketek@saki-builder":true}}`,
+				)
+			},
+		},
+		{
+			// Installed + enabled, but the skill file this plan's check added is missing — the exact
+			// stale/partial-cache case this plan closes; must refuse on BOTH paths identically.
+			name: "claude installed but skill missing", engine: domain.EngineClaude, wantOK: false,
+			fixture: func(t *testing.T, dir string) {
+				installPath := filepath.Join(dir, "cache", "saketek", "saki-builder", "0.30.2")
+				writeClaudeProfile(t, dir,
+					`{"plugins":{"saketek@saki-builder":[{"installPath":"`+installPath+`","version":"0.30.2"}]}}`,
+					`{"enabledPlugins":{"saketek@saki-builder":true}}`,
+				)
+			},
 		},
 	}
 

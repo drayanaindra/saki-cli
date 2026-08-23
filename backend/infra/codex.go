@@ -21,9 +21,11 @@ import (
 // it does not echo the ErrEngineNotProvisioned text it is wrapped in.
 var ErrCodexSkillsMissing = errors.New("codex profile does not resolve @saketek/saki-builder")
 
-// codexProofSkill is the skill the loose-skills fallback reads as the marker for a manual install.
-// `build` is the journey's load-bearing command, so its absence means a build run cannot resolve.
-const codexProofSkill = "build"
+// sentinelProofSkill is the skill every engine's file-level proof reads as the marker for a working
+// install — codex's loose-skills fallback, and claude's installPath check (claude.go). `build` is the
+// journey's load-bearing command, so its absence means a build run cannot resolve. Package-scoped, not
+// codex-specific, despite the historical name pattern of the file it was first added to.
+const sentinelProofSkill = "build"
 
 // codexPluginTableRE matches the config.toml table that registers the saki-builder plugin, e.g.
 //
@@ -62,7 +64,7 @@ func CodexSkillsProof(configDir *string) error {
 	if pluginRegistered(filepath.Join(home, "config.toml")) {
 		return nil
 	}
-	skill := filepath.Join(home, "skills", codexProofSkill, "SKILL.md")
+	skill := filepath.Join(home, "skills", sentinelProofSkill, "SKILL.md")
 	if _, err := os.Stat(skill); err == nil {
 		return nil
 	}

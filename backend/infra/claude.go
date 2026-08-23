@@ -14,8 +14,9 @@ var ErrClaudePluginMissing = errors.New("claude profile does not resolve saki-bu
 
 // ErrClaudeSkillMissing is returned by ClaudeProfileProof when the plugin is installed and enabled
 // but its installPath does not carry the sentinel skill file — a stale/partial plugin cache (e.g. an
-// interrupted update) that the plugin-level check alone cannot see. Parity with codex's existing
-// loose-install sentinel check (codexProofSkill, codex.go) — claude previously did no file-level
+// interrupted update), OR the installed_plugins.json record carries no installPath at all — a
+// pre-installPath Claude Code version, or a hand-edited profile. Parity with codex's existing
+// loose-install sentinel check (sentinelProofSkill, codex.go) — claude previously did no file-level
 // verification at all.
 var ErrClaudeSkillMissing = errors.New("claude profile does not carry the saki-builder skills")
 
@@ -44,11 +45,19 @@ type claudeSettings struct {
 func ClaudeProfileProof(configDir *string) error {
 	plugin, err := resolveClaudeProfile(configDir)
 	if err != nil {
-		return fmt.Errorf("%w: %w: %v", usecase.ErrEngineNotProvisioned, ErrClaudePluginMissing, err)
+		return fmt.Errorf("%w: %w: %v — run:\n%s", usecase.ErrEngineNotProvisioned, ErrClaudePluginMissing, err, usecase.ClaudeInstallFix)
 	}
-	skillPath := filepath.Join(plugin.InstallPath, "skills", codexProofSkill, "SKILL.md")
+	// InstallPath must be non-empty before it is ever joined into a path: an empty string here would
+	// make filepath.Join resolve to a CWD-relative "skills/build/SKILL.md" (this backend's CWD is the
+	// operator's own project dir, not a fixed sandbox) — a coincidental match there would fail OPEN,
+	// exactly the false-`ok` this check exists to close. A pre-installPath Claude Code version, or a
+	// hand-edited profile, both fail closed here rather than risk that.
+	if plugin.InstallPath == "" {
+		return fmt.Errorf("%w: %w: installed plugin %s has no installPath — run:\n%s", usecase.ErrEngineNotProvisioned, ErrClaudeSkillMissing, plugin.ID, usecase.ClaudeInstallFix)
+	}
+	skillPath := filepath.Join(plugin.InstallPath, "skills", sentinelProofSkill, "SKILL.md")
 	if _, err := os.Stat(skillPath); err != nil {
-		return fmt.Errorf("%w: %w: %s", usecase.ErrEngineNotProvisioned, ErrClaudeSkillMissing, skillPath)
+		return fmt.Errorf("%w: %w: %s is absent — run:\n%s", usecase.ErrEngineNotProvisioned, ErrClaudeSkillMissing, skillPath, usecase.ClaudeInstallFix)
 	}
 	return nil
 }
