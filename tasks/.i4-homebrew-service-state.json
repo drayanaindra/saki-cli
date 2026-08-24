@@ -9,7 +9,8 @@
       "artifact": "tasks/i4-homebrew-service-plan.md"
     },
     "approved": {
-      "status": "in-progress"
+      "status": "done",
+      "lastCommit": "470450e"
     }
   },
   "updated": "2026-08-24"
