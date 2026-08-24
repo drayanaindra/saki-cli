@@ -20,6 +20,7 @@ import {
   type RunVerb,
 } from './commands/run.js'
 import { cmdRoadmapList, cmdRoadmapAdd, cmdRoadmapInit } from './commands/roadmap.js'
+import { cmdGenesis } from './commands/genesis.js'
 import { cmdPrdShow, cmdPrdLock } from './commands/prd.js'
 import { cmdProto } from './commands/proto.js'
 import {
@@ -156,6 +157,13 @@ const COMMANDS: CommandDef[] = [
     summary: 'provision and verify one engine profile',
     flags: { ...COMMON, engine: 'string', profile: 'string' },
     run: (ctx, positionals, flags) => cmdInitEnv(ctx, positionals, flags),
+  },
+  {
+    path: ['genesis'],
+    usage: 'saki genesis "<product idea>" [--restart]',
+    summary: 'start a product from scratch (spawns /saki-builder:genesis)',
+    flags: { ...COMMON, restart: 'boolean' },
+    run: (ctx, rest, flags) => cmdGenesis(ctx, rest.join(' '), flags),
   },
   {
     path: ['roadmap', 'init'],
