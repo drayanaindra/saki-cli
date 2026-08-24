@@ -79,13 +79,16 @@ describe('cmdBackend', () => {
 
   it('reports healthy and unhealthy status states', async () => {
     daemon.readDaemonState.mockResolvedValue(state)
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) }))
+    vi.stubGlobal('fetch', fetchMock)
     const healthy = context(false)
     await expect(cmdBackend(healthy.ctx, ['status'], {})).resolves.toBe(EXIT.OK)
     expect(healthy.out).toEqual(['backend healthy (pid 42)'])
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:8788/api/health', expect.anything())
 
     daemon.readDaemonState.mockResolvedValue(null)
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED') }))
+    const rejectMock = vi.fn(async () => { throw new Error('ECONNREFUSED') })
+    vi.stubGlobal('fetch', rejectMock)
     const unavailable = context()
     await expect(cmdBackend(unavailable.ctx, ['status'], {})).resolves.toBe(EXIT.OK)
     expect(JSON.parse(unavailable.out[0])).toEqual({
@@ -94,11 +97,13 @@ describe('cmdBackend', () => {
       goUrl: unavailable.ctx.client.goUrl,
       socketPath: null,
     })
+    expect(rejectMock).toHaveBeenCalledWith(`${unavailable.ctx.client.goUrl}/api/health`, expect.anything())
   })
 
   it('reports healthy via reachability probe when no state file exists (service-managed backend)', async () => {
     daemon.readDaemonState.mockResolvedValue(null)
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) }))
+    vi.stubGlobal('fetch', fetchMock)
     const { ctx, out } = context()
     await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
     expect(JSON.parse(out[0])).toEqual({
@@ -107,5 +112,14 @@ describe('cmdBackend', () => {
       goUrl: ctx.client.goUrl,
       socketPath: null,
     })
+    expect(fetchMock).toHaveBeenCalledWith(`${ctx.client.goUrl}/api/health`, expect.anything())
+  })
+
+  it('renders a distinct human message for a service-managed backend with no state file', async () => {
+    daemon.readDaemonState.mockResolvedValue(null)
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    const { ctx, out } = context(false)
+    await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
+    expect(out).toEqual(['backend healthy (service-managed, no local state file)'])
   })
 })

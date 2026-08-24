@@ -23,15 +23,29 @@ export async function cmdBackend(ctx: Ctx, positionals: string[], flags: Record<
   const state = await readDaemonState(ctx.env)
   const answer = state
     ? { pid: state.pid, healthy: Boolean(await ensureHealthy(state)), goUrl: state.goUrl, socketPath: state.socketPath }
-    // No state file doesn't mean no backend — a service-managed backend (e.g. `brew services start saki`)
-    // never goes through ensureDaemon()/writeState(), so probe reachability directly before giving up.
+    // No state file doesn't always mean no backend. backend/cmd/server/main.go writes its own state
+    // file unconditionally on startup (same daemonStatePath() logic, keyed on uid + TMPDIR), so a
+    // service-managed backend under the SAME user/TMPDIR as this shell is already covered by the
+    // `state` branch above. This arm only matters when they diverge — a different uid (e.g. `sudo
+    // brew services`) or a launchd/systemd environment with its own TMPDIR — where readDaemonState
+    // can't find the file the service wrote. Probe reachability directly rather than assume "down".
     : { pid: null, healthy: Boolean(await ensureHealthy({ goUrl: ctx.client.goUrl })), goUrl: ctx.client.goUrl, socketPath: null }
-  emit(answer, { json: ctx.json, human: answer.healthy ? `backend healthy (pid ${answer.pid})` : 'backend not running' }, ctx.write)
+  const human = answer.healthy
+    ? answer.pid === null
+      ? 'backend healthy (service-managed, no local state file)'
+      : `backend healthy (pid ${answer.pid})`
+    : 'backend not running'
+  emit(answer, { json: ctx.json, human }, ctx.write)
   return EXIT.OK
 }
 
 async function ensureHealthy(state: { goUrl: string }): Promise<boolean> {
-  try { const res = await fetch(`${state.goUrl}/api/health`); return res.ok && (await res.json() as { ok?: boolean }).ok === true } catch { return false }
+  try {
+    const res = await fetch(`${state.goUrl}/api/health`, { signal: AbortSignal.timeout(3_000) })
+    return res.ok && (await res.json() as { ok?: boolean }).ok === true
+  } catch {
+    return false
+  }
 }
 
 function fail(ctx: Ctx, message: string): ExitCode {

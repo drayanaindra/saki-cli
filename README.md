@@ -60,6 +60,11 @@ If you've already used the `saki` CLI directly (which lazily spawns its own back
 if the port's already held, so a lazily-spawned instance and the brew service can't both own it. Once
 the service owns the port, `saki` CLI commands reuse it automatically — no conflict in that direction.
 
+Note: `saki-backend` writes its own state file on every startup (keyed on your user + temp dir), so
+`saki backend stop` can stop the brew-managed process too if it finds it — `brew services`' `keep_alive`
+means it self-heals (restarts automatically), but you'll briefly see it as stopped. Use
+`brew services stop saki` if you want it to actually stay down.
+
 **Or build from source** (any platform Go ≥ 1.25 targets, and the only path on Windows):
 
 ```bash
