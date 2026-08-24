@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -123,17 +124,19 @@ func TestSpawn_CodexNeverRefusesAnUnresolvableSlashPrompt(t *testing.T) {
 	j := NewFileJournal(t.TempDir())
 	sp := NewShSpawner(j)
 
-	for _, prompt := range []string{
+	for i, prompt := range []string{
 		"/saki-builder:build, then do X",
 		"/-x arg",
 		"Proto a Plan-track work item that has a plan but no PRD.",
 	} {
-		_, _, err := sp.Spawn(usecase.SpawnSpec{
-			ID: "c2", Prompt: prompt, ConfigDir: &cfgDir, Kind: "build", Engine: domain.EngineCodex,
+		_, wait, err := sp.Spawn(usecase.SpawnSpec{
+			ID: "c2-" + strconv.Itoa(i), Prompt: prompt, ConfigDir: &cfgDir, Kind: "build", Engine: domain.EngineCodex,
 		})
 		if err != nil {
 			t.Errorf("prompt %q must spawn on codex, got %v", prompt, err)
+			continue
 		}
+		wait()
 	}
 }
 
