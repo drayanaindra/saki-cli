@@ -37,7 +37,7 @@ func OpencodePluginProof(configDir *string) error {
 	path := opencodeConfigPath(configDir)
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("%w: %w: config %s unreadable: %v", usecase.ErrEngineNotProvisioned, ErrOpencodePluginMissing, path, err)
+		return fmt.Errorf("%w: %w: config %s unreadable: %v — run:\n%s", usecase.ErrEngineNotProvisioned, ErrOpencodePluginMissing, path, err, usecase.OpencodeInstallFix)
 	}
 	var cfg struct {
 		Plugin []string `json:"plugin"`
@@ -47,7 +47,7 @@ func OpencodePluginProof(configDir *string) error {
 	// strict parse fails (a config that actually carries comments).
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		if err := json.Unmarshal(stripJSONC(raw), &cfg); err != nil {
-			return fmt.Errorf("%w: %w: config %s unparseable: %v", usecase.ErrEngineNotProvisioned, ErrOpencodePluginMissing, path, err)
+			return fmt.Errorf("%w: %w: config %s unparseable: %v — run:\n%s", usecase.ErrEngineNotProvisioned, ErrOpencodePluginMissing, path, err, usecase.OpencodeInstallFix)
 		}
 	}
 	for _, p := range cfg.Plugin {
@@ -55,7 +55,7 @@ func OpencodePluginProof(configDir *string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: %w: %s lists plugins %v", usecase.ErrEngineNotProvisioned, ErrOpencodePluginMissing, path, cfg.Plugin)
+	return fmt.Errorf("%w: %w: %s lists plugins %v — run:\n%s", usecase.ErrEngineNotProvisioned, ErrOpencodePluginMissing, path, cfg.Plugin, usecase.OpencodeInstallFix)
 }
 
 // opencodeConfigPath resolves the opencode config file the SPAWNED CHILD reads (buildSpawnEnv sets

@@ -4,7 +4,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/drayanaindra/saki-cli/backend/usecase"
 )
 
 // writeOpencodeProfile writes <dir>/opencode/opencode.json (the path a pinned XDG_CONFIG_HOME=<dir>
@@ -40,11 +43,21 @@ func TestOpencodePluginProof_SchemaUrlConfig(t *testing.T) {
 }
 
 // E26 9.4.2 — a profile WITHOUT the plugin fails loudly (no silent no-op run).
+// F5 slice 1 — the refusal must ALSO wrap ErrEngineNotProvisioned (the sentinel
+// backend/adapter/http.go:543 routes an opencode spawn refusal on, not ErrOpencodePluginMissing alone)
+// and embed usecase.OpencodeInstallFix verbatim, matching codex.go/claude.go's already-shipped pattern.
 func TestOpencodePluginProof_Missing(t *testing.T) {
 	dir := t.TempDir()
 	writeOpencodeProfile(t, dir, `{"plugin":["some-other-plugin"]}`)
-	if err := OpencodePluginProof(&dir); !errors.Is(err, ErrOpencodePluginMissing) {
+	err := OpencodePluginProof(&dir)
+	if !errors.Is(err, ErrOpencodePluginMissing) {
 		t.Fatalf("a profile without the plugin must fail with ErrOpencodePluginMissing, got %v", err)
+	}
+	if !errors.Is(err, usecase.ErrEngineNotProvisioned) {
+		t.Fatalf("refusal must wrap ErrEngineNotProvisioned so the reason reaches the operator, got %v", err)
+	}
+	if !strings.Contains(err.Error(), usecase.OpencodeInstallFix) {
+		t.Fatalf("refusal must embed usecase.OpencodeInstallFix verbatim, got %v", err)
 	}
 }
 
@@ -62,10 +75,41 @@ func TestOpencodePluginProof_DefaultProfile(t *testing.T) {
 }
 
 // E26 9.4.2 — an ABSENT config file is a loud failure (cannot prove the plugin).
+// F5 slice 1 — same wrap + fix-text bar as TestOpencodePluginProof_Missing (see its comment).
 func TestOpencodePluginProof_NoConfigFile(t *testing.T) {
 	dir := t.TempDir() // no opencode/opencode.json
-	if err := OpencodePluginProof(&dir); !errors.Is(err, ErrOpencodePluginMissing) {
+	err := OpencodePluginProof(&dir)
+	if !errors.Is(err, ErrOpencodePluginMissing) {
 		t.Fatalf("a missing config must fail loudly, got %v", err)
+	}
+	if !errors.Is(err, usecase.ErrEngineNotProvisioned) {
+		t.Fatalf("refusal must wrap ErrEngineNotProvisioned so the reason reaches the operator, got %v", err)
+	}
+	if !strings.Contains(err.Error(), usecase.OpencodeInstallFix) {
+		t.Fatalf("refusal must embed usecase.OpencodeInstallFix verbatim, got %v", err)
+	}
+}
+
+// F5 slice 1 — an unparseable config (fails BOTH the strict-JSON parse AND the JSONC-tolerant fallback)
+// is currently the ONLY untested branch in OpencodePluginProof (opencode.go:48-51). The fixture is
+// deliberately irrecoverable even after stripJSONC's comment-stripping (never just a comment/trailing
+// comma, which would parse clean via the JSONC fallback and mis-hit a different branch). Assert on the
+// "unparseable" substring too, to pin this specific branch rather than only the shared wrap contract.
+func TestOpencodePluginProof_Unparseable(t *testing.T) {
+	dir := t.TempDir()
+	writeOpencodeProfile(t, dir, "{ this is not json")
+	err := OpencodePluginProof(&dir)
+	if !errors.Is(err, ErrOpencodePluginMissing) {
+		t.Fatalf("an unparseable config must fail with ErrOpencodePluginMissing, got %v", err)
+	}
+	if !errors.Is(err, usecase.ErrEngineNotProvisioned) {
+		t.Fatalf("refusal must wrap ErrEngineNotProvisioned so the reason reaches the operator, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "unparseable") {
+		t.Fatalf("error must pin the unparseable branch (opencode.go:50), got %v", err)
+	}
+	if !strings.Contains(err.Error(), usecase.OpencodeInstallFix) {
+		t.Fatalf("refusal must embed usecase.OpencodeInstallFix verbatim, got %v", err)
 	}
 }
 
