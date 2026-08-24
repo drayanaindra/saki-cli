@@ -231,16 +231,16 @@ during research (Branch Points above).
 
 ## Success Criteria
 
-- [ ] `ruby -c Formula/saki.rb` (in the `homebrew-tap` repo) → `Syntax OK`
+- [x] `ruby -c Formula/saki.rb` (in the `homebrew-tap` repo) → `Syntax OK`
 - [ ] 🔲 BLOCKED (environment): `brew audit --strict --online drayanaindra/tap/saki` — this dev machine's Xcode Command Line Tools are too outdated for Homebrew's Ruby toolchain (`Error: Your Command Line Tools are too outdated`). Substitute run: `ruby -c` (above) + `brew tap drayanaindra/tap` succeeding (formula parses and loads under Homebrew's own Ruby, not just the standalone interpreter) — re-run the real audit once CLT is updated
 - [ ] 🔲 BLOCKED (environment): `brew tap drayanaindra/tap && brew install drayanaindra/tap/saki && brew services start saki` — same CLT wall (`brew install` → `Error: Your Command Line Tools are too outdated`). Substitute run (all passed): `brew tap` succeeded; brew's resolver reported `Would install 1 formula: saki (0.1.0)` on the correct `on_macos`/`Hardware::CPU.arm?` branch for this machine; `curl -sL <the exact darwin-arm64 release URL in the formula> | shasum -a 256` matched the formula's embedded sha256 byte-for-byte; downloaded file is a real `Mach-O 64-bit executable arm64`. Re-run the real install + `brew services start` once CLT is updated
 - [ ] 🔲 BLOCKED (environment): `curl -s http://127.0.0.1:8788/api/health` while the service is running — depends on the above; re-run once CLT is updated
-- [ ] `brew untap drayanaindra/tap` → exits 0 (cleanup performed — no install occurred to uninstall, since install itself was CLT-blocked)
-- [ ] `npx vitest run -t cmdBackend` → all `cmdBackend` tests pass, including the new "reachability probe" case and the rewritten "unavailable" case
-- [ ] `grep -q "brew services start saki" README.md && grep -q "saki backend stop" README.md` → exits 0 (coexistence note present)
-- [ ] `grep -q "homebrew-tap" docs/RELEASING.md` → exits 0 (release-time update step present)
-- [ ] `awk '/### I4/,/^$/' tasks/roadmap.md | grep -q 'Child plan:\*\* tasks/i4-homebrew-service-plan.md'` → exits 0
-- [ ] `npm run typecheck && npm test` → both exit 0 (no regressions outside the intended `backend.test.ts` change)
+- [x] `brew untap drayanaindra/tap` → exits 0 (cleanup performed — no install occurred to uninstall, since install itself was CLT-blocked)
+- [x] `npx vitest run -t cmdBackend` → all `cmdBackend` tests pass, including the new "reachability probe" case and the rewritten "unavailable" case
+- [x] `grep -q "brew services start saki" README.md && grep -q "saki backend stop" README.md` → exits 0 (coexistence note present)
+- [x] `grep -q "homebrew-tap" docs/RELEASING.md` → exits 0 (release-time update step present)
+- [x] `awk '/### I4/,/^$/' tasks/roadmap.md | grep -q 'Child plan:\*\* tasks/i4-homebrew-service-plan.md'` → exits 0
+- [x] `npm run typecheck && npm test` → both exit 0 (no regressions outside the intended `backend.test.ts` change)
 
 ---
 
