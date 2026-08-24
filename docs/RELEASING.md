@@ -14,22 +14,24 @@ human-run action — no agent triggers it automatically.
 
 1. Decide the semver bump (`patch` / `minor` / `major`) from what's in `## [Unreleased]` in
    `CHANGELOG.md`.
-2. `npm version <patch|minor|major>` — bumps `package.json`'s `version` and creates a git commit
-   (do **not** let this also create the tag yet; `npm version` tags by default — either pass
-   `--no-git-tag-version` and tag manually after the CHANGELOG edit below, or amend the tag after
-   step 3).
+2. `npm version <patch|minor|major> --no-git-tag-version` — bumps `package.json`'s `version` only,
+   no commit, no tag yet (the tag must point at the commit that includes the CHANGELOG update
+   below, not one that predates it).
 3. Move the `## [Unreleased]` section content in `CHANGELOG.md` under a new heading
    `## [X.Y.Z] - YYYY-MM-DD` (today's date), and add the two new link references at the bottom
    (`[Unreleased]: .../compare/vX.Y.Z...HEAD` and `[X.Y.Z]: .../releases/tag/vX.Y.Z`). Leave a
    fresh empty `## [Unreleased]` heading above it.
-4. Commit: `git commit -am "chore(release): vX.Y.Z"`.
-5. Tag: `git tag vX.Y.Z`.
+4. Commit both changes together: `git commit -am "chore(release): vX.Y.Z"`.
+5. Tag that commit: `git tag vX.Y.Z`.
 6. `git push origin main --tags`.
 7. `.github/workflows/release.yml` takes over from here:
-   - `build` — cross-compiles `saki-backend` for darwin/linux × amd64/arm64.
-   - `release` — generates `SHA256SUMS.txt` and publishes a GitHub Release for the tag with all
-     4 binaries + the checksum file attached.
-   - `publish` — runs `npm publish --access public --provenance` using `NPM_TOKEN`.
+   - `build` — verifies the pushed tag matches `package.json`'s version, then cross-compiles
+     `saki-backend` for darwin/linux × amd64/arm64.
+   - `test` — `npm run typecheck && npm test` and `go vet ./... && go test ./...` (backend).
+   - `release` (needs `build` + `test`) — generates `SHA256SUMS.txt` and publishes a GitHub
+     Release for the tag with all 4 binaries + the checksum file attached.
+   - `publish` (needs `release`) — runs `npm publish --access public --provenance` using
+     `NPM_TOKEN`.
 8. Verify: `npm view @saketek/saki-cli version` matches `X.Y.Z`, and
    `npm install -g @saketek/saki-cli && saki status` resolves a working backend on a fresh machine.
 

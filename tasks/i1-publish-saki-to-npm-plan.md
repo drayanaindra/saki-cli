@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-24
 **Blocking items:** 0 (see Evidence Ledger)
-**Risk Score:** HIGH (postinstall downloads and executes a binary — supply-chain-sensitive step; mitigated by checksum verification + npm provenance, see Step 3/4 — reviewed 2026-08-24, 4 blockers found and fixed, see Evidence Ledger)
+**Risk Score:** HIGH (postinstall downloads and executes a binary — supply-chain-sensitive step; mitigated by checksum verification + npm provenance, see Step 3/4 — reviewed twice 2026-08-24: pre-implementation spot-check (4 blockers) + post-implementation fresh-context review (3 blockers), all fixed and re-verified, see Evidence Ledger)
 **Unknown Count:** 0 / 2 max
 **Behavior Spec:** N/A (backend/tooling-only, no UI)
 **Source PRD:** N/A (standalone, Plan-track)
@@ -229,6 +229,25 @@ anchors are `backend/infra/killer.go:12` and `backend/infra/spawner.go:131`) and
 contradiction (referenced an env var, `SAKI_TEST_VERSION_TAG_MISSING`, that no step defined — replaced
 with a version-bump-based repro that needs no test-only code path).
 
+**Second pass — `/saki-builder:reviewer` fresh-context review, post-implementation (2026-08-24),
+3 blockers, all fixed and re-verified against real repro cases (not just re-read):**
+
+| # | Finding | Resolution |
+|---|---|---|
+| R1 | `assetNameFor()` interpolated Node's `process.arch` (`x64`) directly, but the CI matrix publishes assets named by Go's `GOARCH` (`amd64`) — every amd64 install 404'd and fell through to the "build from source" remediation, silently. Only caught because the reviewer diffed the two naming schemes side by side; the author's own manual test used `arm64`, where both schemes agree. | `scripts/fetch-backend-binary.mjs`: added `GOARCH_BY_NODE_ARCH = {x64:'amd64', arm64:'arm64'}`, `assetNameFor`/`isSupportedTarget` now map through it. Re-verified: `assetNameFor('darwin','x64')` → `saki-backend-darwin-amd64`, matching `release.yml`'s `matrix.goarch`. |
+| R2 | `main()` had no top-level `.catch()`, and two throw sites — `readPkgVersion()` (outside the try) and `unlinkSync()` inside the catch handler's own cleanup — could each escape uncaught, contradicting the file's own "never fails npm install" contract with a real `exit=1`. | Wrapped the entire body in `main()`'s try/catch (moved the go.mod/binary/platform checks inside it), wrapped `cleanupDownload()`'s `unlinkSync` in its own try/catch (best-effort, a stale `.download` file is inert), and added `main().catch(...)` as defense-in-depth. Re-verified against both reviewer-cited repro cases (unlinkable `.download` via a directory in its place; malformed `package.json`) — both now `exit=0`. |
+| R3 | `.github/workflows/release.yml`'s `publish` job declared only `permissions: {id-token: write}`; GitHub Actions' default-deny model sets every unspecified scope to `none`, so `contents` was `none` and `actions/checkout@v4` would 403 before `npm ci` ever ran. | Added `contents: read` to the `publish` job's permissions (matches npm's own provenance guidance). Re-verified via the YAML-structure assertion in Success Criteria. |
+
+Also fixed as part of the same pass (review Warnings, cheap and in files already touched):
+a tag/version-match guard in the `build` job (a diverged tag would 404 the same way as R1);
+a new `test` job (typecheck/vitest/go vet/go test) gating `release` — nothing previously ran the
+suite before `npm publish`; broadened `fetchWithRetry` to retry any 5xx or network error, not just
+`TimeoutError`/`AbortError`; the skip check now uses `accessSync(..., X_OK)` instead of bare
+`existsSync` (step 3b said "exists **and is executable**"); removed the two README "Not built yet"
+bullets (daemon lifecycle, MCP surface) that contradicted the same commit's `CHANGELOG.md` (F1/F3
+already shipped); resolved `docs/RELEASING.md`'s two-path tag instruction to one path
+(`--no-git-tag-version`, tag after the CHANGELOG commit).
+
 ### Advisory (visible, never gates)
 
 | Step | Note | Evidence |
@@ -249,7 +268,7 @@ with a version-bump-based repro that needs no test-only code path).
 - [x] `node scripts/fetch-backend-binary.mjs` run from this repo root (source checkout, `backend/go.mod` present) → skips **silently** (adjusted in impl: matches step 3a's "skip silently" spec, not this criterion's original "prints the skip message" wording — the wording was stale against the Steps table), does **not** touch `dist/saki-backend`, exits 0
 - [x] 🔲 MANUAL: `rsync -a --exclude=backend --exclude=node_modules --exclude=.git . /tmp/saki-npm-sim/ && cd /tmp/saki-npm-sim && npm pkg set version=0.0.0-no-such-release && node scripts/fetch-backend-binary.mjs; echo "exit=$?"` → prints the "missing release" remediation message per the Branch Points entry (no release exists for tag `v0.0.0-no-such-release`), `exit=0` (does not throw, does not hang), and `dist/saki-backend` is absent afterward (no partial file left — verifies step 3d's temp-file-then-rename atomicity)
 - [x] `node -e "import('./scripts/fetch-backend-binary.mjs').then(m => console.log(m.assetNameFor('darwin','arm64'), m.isSupportedTarget('win32','x64')))"` → stdout `saki-backend-darwin-arm64 false`
-- [x] `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/release.yml')); assert set(d['jobs']) >= {'build','release','publish'}; assert d['jobs']['release']['needs']=='build'; assert d['jobs']['publish']['needs']=='release'; print('ok')"` → prints `ok` (3 jobs: matrix build → GitHub Release → npm publish, matching the step 4 narrative — adjusted in impl: the checker originally referenced a 2-job shape, reconciled to the actual 3-job build→release→publish chain)
+- [x] `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/release.yml')); j=d['jobs']; assert set(j) >= {'build','test','release','publish'}; assert j['release']['needs']==['build','test']; assert j['publish']['needs']=='release'; assert j['publish']['permissions']['contents']=='read'; print('ok')"` → prints `ok` (4 jobs: matrix build (+ tag/version guard) → test (typecheck/vitest/go vet/go test) → GitHub Release → npm publish — adjusted in impl during code review: added the `test` job and the tag/version guard, both review findings; `publish` needs explicit `contents: read` alongside `id-token: write` or `actions/checkout` 403s under GitHub Actions' default-deny permissions model)
 - [x] `grep -q '## \[Unreleased\]' CHANGELOG.md && grep -q '## \[0.1.0\]' CHANGELOG.md && for id in F1 F2 F3 F4 F6 I2 I3; do grep -q "$id" CHANGELOG.md || echo "MISSING $id"; done` → no `MISSING` lines printed
 - [x] `test -f docs/RELEASING.md && grep -q 'npm version' docs/RELEASING.md && grep -q 'git tag' docs/RELEASING.md` → exits 0
 - [x] `! grep -q "No published npm package" README.md` → exits 0 (string absent)

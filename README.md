@@ -105,10 +105,8 @@ Given the above: do not expose this port, and do not run it as a privileged user
 
 ## Not built yet
 
-Honest list of what the packaging still lacks:
+Honest list of what the packaging still lacks (see [Requirements](#requirements) for platform support):
 
-- No daemon lifecycle (`saki` does not yet auto-start the backend) and no unix-socket transport
-- No MCP surface (`saki mcp`) for agents that prefer tools over a shell
 - `saki artifacts` is session-gated via the studio; the local stub `scripts/stub-studio.mjs` serves the route
 
 ## License
