@@ -6,7 +6,8 @@
   "steps": {
     "rplan": { "status": "done", "artifact": "tasks/i1-publish-saki-to-npm-plan.md" },
     "approved": { "status": "done", "lastCommit": "eb430b2" },
-    "qa": { "status": "done" }
+    "qa": { "status": "done" },
+    "reviewer": { "status": "done" }
   },
   "updated": "2026-08-24"
 }
