@@ -51,6 +51,7 @@ to reach the backend independently):
 
 ```bash
 brew tap drayanaindra/tap
+brew trust --tap drayanaindra/tap   # non-official tap — Homebrew asks you to confirm this once
 brew install saki
 brew services start saki
 ```
