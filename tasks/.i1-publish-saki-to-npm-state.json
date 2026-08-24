@@ -4,7 +4,8 @@
   "branch": "main",
   "item": "I1",
   "steps": {
-    "rplan": { "status": "done", "artifact": "tasks/i1-publish-saki-to-npm-plan.md" }
+    "rplan": { "status": "done", "artifact": "tasks/i1-publish-saki-to-npm-plan.md" },
+    "approved": { "status": "done", "lastCommit": "eb430b2" }
   },
   "updated": "2026-08-24"
 }
