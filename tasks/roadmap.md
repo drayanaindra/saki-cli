@@ -45,7 +45,7 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 **Child PRD:** prd-saki-init-env-provision-engine-profile.md
 
 ### I1 · Publish `saki` to npm
-**Type:** Improvement · **Track:** Plan · **Status:** In-progress · **Owner:** unassigned · **Updated:** 2026-08-24
+**Type:** Improvement · **Track:** Plan · **Status:** Shipped · **Owner:** unassigned · **Updated:** 2026-08-24
 **What:** Ship a published package so consumers stop building from source. Covers the prepublish build, the `bin` wiring, `files` contents, and how the Go backend binary is distributed alongside the Node CLI.
 **Child plan:** tasks/i1-publish-saki-to-npm-plan.md
 
