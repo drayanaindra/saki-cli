@@ -1,5 +1,5 @@
 {
-  "name": "saki",
+  "name": "@saketek/saki-cli",
   "version": "0.1.0",
   "type": "module",
   "description": "Headless command line for the saki build orchestrator — drive a PRD → plan → build → QA → review journey from a terminal, on claude, codex or opencode.",
@@ -27,16 +27,22 @@
   },
   "files": [
     "dist",
+    "!dist/saki-backend",
     "docs",
     "scripts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "tsc",
+    "postinstall": "node scripts/fetch-backend-binary.mjs",
     "dev": "tsx src/index.ts",
     "stub:studio": "node scripts/stub-studio.mjs",
     "test": "vitest run",

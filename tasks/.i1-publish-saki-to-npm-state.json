@@ -1,0 +1,10 @@
+{
+  "task": "i1-publish-saki-to-npm",
+  "plan": "tasks/i1-publish-saki-to-npm-plan.md",
+  "branch": "main",
+  "item": "I1",
+  "steps": {
+    "rplan": { "status": "done", "artifact": "tasks/i1-publish-saki-to-npm-plan.md" }
+  },
+  "updated": "2026-08-24"
+}
