@@ -80,7 +80,7 @@ node dist/index.js status
 ```console
 $ node dist/index.js status
 backend   http://127.0.0.1:8788
-reachable yes (pipeline-studio-backend)
+reachable yes (saki-backend)
 express   not configured (set SAKI_STUDIO_URL to include it)
 ```
 

@@ -81,7 +81,7 @@ $ saki status
 studio    http://localhost:8787
 reachable yes (pipeline-studio-server)
 backend   http://127.0.0.1:8788
-reachable yes (pipeline-studio-backend)   <- must also be up: runs/roadmap/prd/branch live here
+reachable yes (saki-backend)   <- must also be up: runs/roadmap/prd/branch live here
 devMode   on              <- must be "on" for the rest of the CLI
 auth      authenticated
 runs      allowed

@@ -195,7 +195,7 @@ every journey command, and Express is opt-in via `SAKI_STUDIO_URL`:
 
 ```
 backend   http://127.0.0.1:8788
-reachable yes (pipeline-studio-backend)   <- MUST be "yes" — it serves runs/roadmap/prd/branch/proto
+reachable yes (saki-backend)   <- MUST be "yes" — it serves runs/roadmap/prd/branch/proto
 express   not configured (set SAKI_STUDIO_URL to include it)   <- normal; NOT an error
 ```
 
@@ -204,7 +204,7 @@ because Express gates those routes:
 
 ```
 backend   http://127.0.0.1:8788
-reachable yes (pipeline-studio-backend)
+reachable yes (saki-backend)
 studio    http://localhost:8787
 reachable yes (pipeline-studio-server)
 devMode   on              <- MUST be "on"
