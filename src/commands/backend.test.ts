@@ -85,12 +85,26 @@ describe('cmdBackend', () => {
     expect(healthy.out).toEqual(['backend healthy (pid 42)'])
 
     daemon.readDaemonState.mockResolvedValue(null)
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED') }))
     const unavailable = context()
     await expect(cmdBackend(unavailable.ctx, ['status'], {})).resolves.toBe(EXIT.OK)
     expect(JSON.parse(unavailable.out[0])).toEqual({
       pid: null,
       healthy: false,
       goUrl: unavailable.ctx.client.goUrl,
+      socketPath: null,
+    })
+  })
+
+  it('reports healthy via reachability probe when no state file exists (service-managed backend)', async () => {
+    daemon.readDaemonState.mockResolvedValue(null)
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })))
+    const { ctx, out } = context()
+    await expect(cmdBackend(ctx, ['status'], {})).resolves.toBe(EXIT.OK)
+    expect(JSON.parse(out[0])).toEqual({
+      pid: null,
+      healthy: true,
+      goUrl: ctx.client.goUrl,
       socketPath: null,
     })
   })

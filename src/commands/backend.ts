@@ -21,7 +21,11 @@ export async function cmdBackend(ctx: Ctx, positionals: string[], flags: Record<
     return EXIT.OK
   }
   const state = await readDaemonState(ctx.env)
-  const answer = state ? { pid: state.pid, healthy: Boolean(await ensureHealthy(state)), goUrl: state.goUrl, socketPath: state.socketPath } : { pid: null, healthy: false, goUrl: ctx.client.goUrl, socketPath: null }
+  const answer = state
+    ? { pid: state.pid, healthy: Boolean(await ensureHealthy(state)), goUrl: state.goUrl, socketPath: state.socketPath }
+    // No state file doesn't mean no backend — a service-managed backend (e.g. `brew services start saki`)
+    // never goes through ensureDaemon()/writeState(), so probe reachability directly before giving up.
+    : { pid: null, healthy: Boolean(await ensureHealthy({ goUrl: ctx.client.goUrl })), goUrl: ctx.client.goUrl, socketPath: null }
   emit(answer, { json: ctx.json, human: answer.healthy ? `backend healthy (pid ${answer.pid})` : 'backend not running' }, ctx.write)
   return EXIT.OK
 }
