@@ -1,114 +1,151 @@
-# `@saki/cli` — command line for saki studio
+# `saki` — command line for the saki build orchestrator
 
-Lets an agent (or you) drive the studio from a terminal instead of the web UI: start a build, follow
-it, lock a PRD, switch a branch, open an MR.
+Drives an agent (or you) through a **PRD → plan → build → QA → review** journey from a terminal:
+start a build, follow it, lock a PRD, switch a branch, open an MR.
 
-It is a **thin client** over the studio server's existing HTTP API — it adds no routes and
-re-implements no orchestration. Anything the CLI does, the studio does, the same way the UI does it.
+It is a **thin client** over the Go backend's HTTP API — it adds no routes and re-implements no
+orchestration. Anything the CLI does, the backend does, the same way.
 
 ## Install
 
-The bin is published into the workspace root's `.bin` by npm, but only once `dist/` exists — so
-**build before the link appears**:
-
 ```bash
-npm run build -w @saki/cli   # emits apps/cli/dist
-npm install                  # links node_modules/.bin/saki -> apps/cli/dist/index.js
-node_modules/.bin/saki --help
-```
-
-Put `./node_modules/.bin` on your `PATH` (or alias it) to just type `saki`.
-
-## Point it at a studio
-
-**One backend by default.** The CLI talks to the Go backend, which serves every journey command —
-runs, roadmap, prd, branch, MRs, proto, screenshots. Neither the web UI (`:5180`) nor the Express
-server (`:8787`) is needed.
-
-| Variable | Default | Serves |
-|---|---|---|
-| `SAKI_BACKEND_URL` | `http://127.0.0.1:8788` | Go (`backend/`) — **everything the CLI needs** |
-| `SAKI_STUDIO_URL` | *(unset — no Express)* | **Opt-in.** Express (`apps/server`), when you are running the full pipeline-studio dev studio. Adds exactly two things: `saki artifacts`, and the `devMode`/`auth` lines in `saki status`. `scripts/stub-studio.mjs` serves both locally when you have no studio. |
-
-```bash
-npm run dev:backend                           # that's all the CLI needs
+npm install -g @saketek/saki-cli   # macOS/Linux, amd64/arm64 — backend binary downloads automatically
 saki status
 ```
 
-Setting `SAKI_STUDIO_URL` switches the CLI into **two-server mode**, where it splits traffic by path
-exactly the way the web UI's Vite proxy does (`src/routes.ts`, a port of
-`frontend/src/proxy-routes.ts`). Start the full studio with `./run.sh` (it also starts the web UI), or
-`npm run dev:server` + `npm run dev:backend`.
+`postinstall` (`scripts/fetch-backend-binary.mjs`) fetches the platform-matching `saki-backend`
+binary from the GitHub Release tagged `v<package version>`, verifies it against that release's
+`SHA256SUMS.txt`, and places it next to `dist/index.js` — this never fails `npm install` (every
+exit path returns 0, even on total failure); a missing binary just surfaces later as `saki backend`
+being unable to find one to spawn.
 
-> **Why the default flipped.** The two-server split is a *pipeline-studio* concern. `backend/` +
-> `apps/cli` are being extracted into a standalone open-source repo where there is no Express at all,
-> so one backend is the normal case and the split is the special one. When that extraction lands, the
-> `SAKI_STUDIO_URL` branch and the route table it drives are deleted outright.
-
-> **Loopback hosts only.** Both servers reject any request whose Host header isn't `localhost` /
-> `127.0.0.1` / `::1` (`apps/server/src/originGuard.ts:33`, `backend/adapter/originguard.go:32`), and
-> the Go backend additionally *binds* the loopback interface only. Pointing either variable at a LAN
-> address or hostname gets a 403 "cross-origin blocked", not a connection error. This is a local
-> single-operator tool by design.
+**Or via Homebrew** (macOS/Linux — runs `saki-backend` as a persistent background service instead
+of the CLI's lazy per-command auto-start; useful when something other than `saki` itself needs to
+reach the backend independently):
 
 ```bash
-saki status                                   # local studio
-SAKI_STUDIO_URL=http://localhost:8799 saki status
+brew tap drayanaindra/tap
+brew trust --tap drayanaindra/tap
+brew install saki
+brew services start saki
 ```
+
+If you've already used `saki` directly (which lazily spawns its own backend), run
+`saki backend stop` first — `saki-backend` binds `127.0.0.1:8788` exclusively and exits immediately
+if the port is already held.
+
+**Or build from source** (any platform Go ≥ 1.25 targets, and the only path on Windows):
+
+```bash
+git clone https://github.com/drayanaindra/saki-cli.git && cd saki-cli
+npm install
+npm run build            # CLI  -> dist/index.js
+npm run backend:build    # Go   -> dist/saki-backend
+
+node dist/index.js status
+```
+
+Put the bin on your `PATH` (npm's global install does this for you) to just type `saki`.
+
+## The backend is a lazily-spawned daemon
+
+Every command except `saki backend` calls `ensureDaemon()` (`src/daemon.ts`) before doing anything
+else: it reads the daemon state file, health-checks it, and if nothing usable is running, spawns
+`saki-backend` detached, waits for `/api/health`, and records the new PID. **You never have to
+start the backend yourself** — the first `saki` command of the day starts it, and it stays up
+across commands and shells for the same user.
+
+```console
+$ saki roadmap list
+daemon:autostart {result:"success",pid:41213}
+...
+```
+
+That line goes to stderr, only on an actual cold start (not on every command — a healthy existing
+daemon or one reused from an already-bound port produces no autostart line). The state file lives
+at `$TMPDIR/saki-<uid>/backend.state.json` (override the directory with `SAKI_DAEMON_STATE_DIR`).
+
+Manage the daemon directly with `saki backend`:
+
+```bash
+saki backend status   # {pid, healthy, goUrl, socketPath} — service-managed backends report pid: null
+saki backend start    # idempotent — reports the existing pid if already up
+saki backend stop     # SIGTERM, falls back to SIGKILL after 5s; also stops a service-managed process it finds
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SAKI_BACKEND_URL` | `http://127.0.0.1:8788` | Go backend base URL — serves runs, roadmap, prd, branch, MRs, proto, screenshots, doctor, init-env |
+| `SAKI_BACKEND_BIN` | *(adjacent `saki-backend`, else `PATH`)* | Override which binary `saki backend start` / autostart spawns |
+| `SAKI_DAEMON_STATE_DIR` | `$TMPDIR/saki-<uid>` | Where the daemon's PID/socket state file lives |
+| `SAKI_STUDIO_URL` | *(unset — no Express)* | **Opt-in.** A second, separately-run Express server for a pipeline-studio deployment that layers a UI/session model over this backend. Adds `saki artifacts` plus the `devMode`/`auth` lines in `saki status`. Setting it also disables backend auto-start (see below) — you're expected to run both servers yourself. |
+
+Setting `SAKI_STUDIO_URL` switches the CLI into **two-server mode**, splitting traffic by path the
+way that deployment's own UI proxy does (`src/routes.ts`). Standalone — the normal case for this
+package — there is no second server and every request goes straight to the Go backend.
+
+> **Loopback hosts only.** The backend rejects any request whose Host header isn't `localhost` /
+> `127.0.0.1` / `::1` (`backend/adapter/originguard.go:32`), and additionally *binds* the loopback
+> interface only. Pointing `SAKI_BACKEND_URL`/`SAKI_STUDIO_URL` at a LAN address or hostname gets a
+> 403 "cross-origin blocked", not a connection error. This is a local single-operator tool by design.
 
 Every command is repo-scoped and defaults to the current directory; override with `--cwd <dir>`.
 
 ## ⚠ `DEV_MODE=1` — only when you set `SAKI_STUDIO_URL`
 
-**Not applicable in the default one-backend mode.** The Go backend has no session gate at all, so
-there is nothing to be exempted from. This section applies only when you have opted into Express.
+**Not applicable in the default standalone mode.** The Go backend has no session gate at all, so
+there is nothing to be exempted from. This section applies only when you've opted into the Express
+layer above.
 
 The CLI holds no session cookie by design — it is a **local, single-operator** tool. `DEV_MODE=1` is
-what exempts it from the studio's session gate (`apps/server/src/authGate.ts:71`).
+what exempts it from that Express server's session gate.
 
 Without it, every gated route answers 401 and the CLI exits **6**:
 
 ```console
-$ saki branch
+$ SAKI_STUDIO_URL=http://localhost:8787 saki branch
 error: authentication required
   the studio is gating this route — restart it with DEV_MODE=1 (check with `saki status`)
 ```
 
-`saki status` probes **both** servers and tells you which mode Express is in:
+`saki status` probes both servers when Express is configured, and tells you which mode it's in:
 
 ```console
-$ saki status
+$ SAKI_STUDIO_URL=http://localhost:8787 saki status
+backend   http://127.0.0.1:8788
+reachable yes (saki-backend)     <- must be up: runs/roadmap/prd/branch live here
 studio    http://localhost:8787
 reachable yes (pipeline-studio-server)
-backend   http://127.0.0.1:8788
-reachable yes (saki-backend)   <- must also be up: runs/roadmap/prd/branch live here
 devMode   on              <- must be "on" for the rest of the CLI
 auth      authenticated
 runs      allowed
 ```
 
-Either server down → the report still prints (so you see which one), stderr names what that server
-serves, and the exit code is **3**. Each `reachable` line belongs to the URL above it, and each
-server names itself in the parentheses, so a probe that reached the same process twice is visible.
+Without `SAKI_STUDIO_URL` set, `saki status` reports only the Go backend plus one line:
+`express   not configured (set SAKI_STUDIO_URL to include it)` — and that absence never counts
+against the exit code.
+
+Either configured server down → the report still prints (so you see which one), stderr names what
+that server serves, and the exit code is **3**.
 
 ## Exit codes — the machine contract
 
-Branch on these, not on stdout. **Two studio routes report failure inside an HTTP 200 body**
-(`/api/switch-branch` and `/api/create-mr` return `{ok:false, error}` when git or `glab` fails), so
-the HTTP status is *not* a reliable success signal. The exit code is.
+Branch on these, not on stdout. **Two routes report failure inside an HTTP 200 body**
+(`branch switch` and `mr create` surface `{ok:false, error}` when git or `glab` fails), so the HTTP
+status is *not* a reliable success signal. The exit code is.
 
 | Code | Name | Meaning |
 |---|---|---|
-| 0 | `OK` | Succeeded. For `run tail`, the run ended `done` |
-| 1 | `ERROR` | Unexpected failure — also: `run tail` on a run that ended `error` (incl. stopped) |
+| 0 | `OK` | Succeeded. For `run tail`/`--follow`, the run ended `done` |
+| 1 | `ERROR` | Unexpected failure — also: a run that ended `error` (incl. stopped), an unprovisioned engine refused at spawn |
 | 2 | `USAGE` | Bad arguments: unknown command/flag, missing or extra positional |
-| 3 | `UNREACHABLE` | A studio server is not answering, **or the one you asked for is not configured**. For `status`, the Go backend `:8788` — plus Express `:8787` when `SAKI_STUDIO_URL` is set. Also `saki artifacts` with no Express configured: the arguments were valid, the server simply isn't there (which is why it is 3, not 2) |
+| 3 | `UNREACHABLE` | A configured server is not answering, or the daemon could not be started. For `status`, the Go backend `:8788` — plus Express `:8787` when `SAKI_STUDIO_URL` is set. Also `saki artifacts` with no Express configured |
 | 4 | `NOT_FOUND` | Unknown run, no roadmap, item has no PRD, PRD not on disk |
-| 5 | `REMOTE_FAILED` | Studio reached, operation refused (`{ok:false}` — git/glab stderr) |
-| 6 | `AUTH_REQUIRED` | Studio gated the route (401/403) — usually a studio without `DEV_MODE=1`; also artifacts |
+| 5 | `REMOTE_FAILED` | Backend reached, operation refused (`{ok:false}` — git/glab stderr) |
+| 6 | `AUTH_REQUIRED` | Studio gated the route (401/403) — only reachable with `SAKI_STUDIO_URL` set and no `DEV_MODE=1`; also artifacts |
 
-Run status vocabulary is the server's: **`running` / `done` / `error`** (`runManager.ts:50`). `done`
-is the only success value — a stopped run ends `error` with a null exit code.
+Run status vocabulary is the server's: **`running` / `done` / `error`**. `done` is the only success
+value — a stopped run ends `error` with a null exit code.
 
 Errors and hints go to **stderr**; results go to **stdout**, so `2>/dev/null` leaves clean data.
 
@@ -119,7 +156,8 @@ human-vs-JSON toggle (it's a long-lived stdio server, not a bounded request/resp
 rejects `--json` as an unknown flag.
 
 ```bash
-saki status                                  # is the studio up, and will it let me in
+saki status                                  # is the backend (and, if configured, the studio) up
+saki backend start|stop|status               # manage the lazily-spawned backend daemon
 saki mcp                                     # start an MCP server exposing journey commands as typed tools
 saki doctor [--profile <dir>]                # can each engine run a saki-builder command, before you dispatch
 saki init-env --engine <e> [--profile <dir>] # provision ONE engine profile, then prove it
@@ -131,6 +169,7 @@ saki roadmap add "<intent>" --feature        # also --epic --improvement --bug (
 saki build  <roadmap-id|prd-path> [--follow] [--engine <e>] [--profile <dir>]   # alias
 saki pickup <roadmap-id>                       [--follow] [--engine <e>]       # alias
 saki rplan  <roadmap-id|plan-path>             [--follow] [--engine <e>]       # alias
+saki prd-review | rplan-review | approved | qa | reviewer | wrap [--follow] [--engine <e>]  # aliases too
 
 saki run build  <roadmap-id|prd-path> [--follow] [--engine <e>] [--profile <dir>]
 saki run pickup <roadmap-id>
@@ -138,7 +177,7 @@ saki run proto  <roadmap-id|prd-path>
 saki run rplan  <roadmap-id|plan-path>
 saki run tail <runId>                        # stream; exits with the RUN's verdict
 saki run stop <runId>
-saki runs                                    # runs the studio still holds
+saki runs                                    # runs the backend still holds
 
 saki prd show <roadmap-id|path>              # resolves the id via the roadmap's Child PRD
 saki prd lock <roadmap-id|path>              # idempotent — already-locked is success
@@ -152,6 +191,13 @@ saki mr create                               # push branch + open a merge reques
 saki artifacts <runId>                       # see limitation below
 saki screenshots                             # /qa screenshots + their urls
 ```
+
+Every top-level run-verb alias (`build`, `pickup`, `rplan`, `prd-review`, `rplan-review`,
+`approved`, `qa`, `reviewer`, `wrap`) is exactly `saki run <verb>` under a shorter name, routed
+through the same `startRun` code path so the two forms never drift in argument handling. `proto` is
+deliberately absent from the alias list — `saki proto <id>` already means "print the URL of an
+already-rendered gallery", and one name can't mean both that and "render one". Only `wrap` accepts
+`--heal`; passing it to any other verb is a usage error, not a silent no-op.
 
 ### `saki mcp` — the same journey commands as typed tools
 
@@ -177,9 +223,10 @@ in the PRD's v1 scope — see `tasks/prd-mcp-surface-saki-mcp.md`:
 Every tool wraps the exact same `cmd*` function the CLI itself calls, so the exit-code contract is
 translated once, never forked: a returned `ExitCode !== EXIT.OK` or a thrown `CliError` both map to
 `isError:true`, with the numeric + symbolic exit code folded into the tool result's content (MCP's boolean
-`isError` alone would collapse the CLI's six distinct codes into one bit). Requires the Go backend already
-running — same precondition as every other `saki` command; `saki mcp` does not auto-start it. Stdio only,
-no auth (matches the backend's loopback-only, local-single-operator trust model).
+`isError` alone would collapse the CLI's six distinct codes into one bit). Requires the backend already
+running — but since every `saki` command (including `saki mcp`) auto-starts the daemon, this is
+satisfied automatically the first time an MCP client spawns it. Stdio only, no auth (matches the
+backend's loopback-only, local-single-operator trust model).
 
 Point your MCP client's config at the `saki` binary directly — the client spawns the process itself and
 owns its stdin/stdout, so `saki mcp` is never started by hand in a shell (backgrounding it with `&` from
@@ -298,7 +345,7 @@ codex plugin add saki-builder@saketek
 ```
 
 This is deliberate: left to run, an unprovisioned engine **exits 0** — the model just says it cannot
-find the command — so the studio would park a build that never started. Install state is proven by
+find the command — so the CLI would park a build that never started. Install state is proven by
 reading the profile, never inferred from a run's exit code.
 
 ### Driving a build end to end
@@ -315,10 +362,9 @@ saki mr create
 ### Build runs are de-duplicated
 
 `saki run build <arg>` resolves `<arg>` (a roadmap id **or** a path) to the **absolute PRD path** and
-sends `meta = {kind:'build', laneKey:<that absolute path>}` — the same key the web UI sends
-(`frontend/src/App.tsx:1447`) and the one the server dedupes on (`apps/server/src/index.ts:236`,
-`runManager.ts:659`). Because both surfaces agree on the key, a build started in the UI and a
-`saki run build` for the same PRD share one lane rather than running twice:
+sends `meta = {kind:'build', laneKey:<that absolute path>}` — the same key a UI layered on top would
+send, and the one the backend dedupes on. Two callers agreeing on that key means a build started
+elsewhere and a `saki run build` for the same PRD share one lane rather than running twice:
 
 ```console
 $ saki run build tasks/prd-x.md --json
@@ -330,39 +376,40 @@ $ saki run build tasks/prd-x.md --json      # retry
 ## Known limitations
 
 **1. `saki artifacts` needs a browser session (exit 6).**
-`GET /api/runs/:id/artifacts` reads the session directly (`index.ts:2195`) rather than relying on
-the auth middleware, so `DEV_MODE=1` does **not** grant access — verified against a live studio. The
-guard is an IDOR protection (its sibling route returns 404 instead of 403 specifically to avoid
-leaking artifact existence across users), so the CLI **explains** the 401 rather than weakening the
-server. View artifacts in the studio UI. To exercise it without the studio, run
-`node scripts/stub-studio.mjs` and point `SAKI_STUDIO_URL` at it.
+The artifacts route requires the Express layer's session, so `DEV_MODE=1` does **not** grant access
+by itself — it only lifts the auth gate, not the session requirement. The guard is an IDOR
+protection, so the CLI **explains** the 401 rather than weakening the server. View artifacts in a
+studio UI when one is layered on top. To exercise it without one, run `node scripts/stub-studio.mjs`
+and point `SAKI_STUDIO_URL` at it.
 
 **2. Hosted / multi-tenant studios are out of scope.** No `saki login`, no device-code flow, no
 token storage. Local only.
 
+**3. Windows is not yet supported.** The npm package ships macOS/Linux binaries only, and the daemon
+lifecycle (`src/daemon.ts`) is untested on Windows; build from source there.
+
 ## Command namespace
 
-The CLI always emits the canonical `/saki-builder:<verb>`. The **server** rewrites the namespace to
-match the target Claude profile at spawn time (`index.ts:1270` → `cmdNs.ts:26,41`), so a bare/symlink
-profile receives `/build` and a plugin profile `/saki-builder:build`. The CLI deliberately does not
-try to detect this itself — guessing from the client side is the exact bug `cmdNs.ts:20-24` was
-written to fix.
+The CLI always emits the canonical `/saki-builder:<verb>`. The **backend** rewrites the namespace to
+match the target Claude profile at spawn time, so a bare/symlink profile receives `/build` and a
+plugin profile `/saki-builder:build`. The CLI deliberately does not try to detect this itself —
+guessing from the client side is the exact bug that rewrite was written to fix.
 
 ## Development
 
-Bins are hoisted to the repo root, so run tooling **from this workspace with the root `.bin`**:
-
 ```bash
-cd apps/cli
-../../node_modules/.bin/vitest run          # tests
-../../node_modules/.bin/vitest run --coverage
-../../node_modules/.bin/tsc --noEmit        # typecheck
-../../node_modules/.bin/tsc                 # build to dist/
+npm install
+npm run build             # CLI -> dist/index.js
+npm run backend:build     # Go  -> dist/saki-backend
+npm run dev                       # tsx src/index.ts
+npm test                          # vitest run
+npm run test:coverage             # vitest run --coverage
+npm run typecheck                 # tsc --noEmit
+npm run backend:test              # cd backend && go test ./...
+scripts/free-e2e-ports.sh         # reclaim ports wedged by a killed e2e run
+npm run e2e                       # playwright test
 ```
 
-Do **not** use `npm run test -w @saki/cli` locally — RTK intercepts `npm run` and returns stale
-results (see the root `CLAUDE.md`).
-
 Two runtime dependencies: `@modelcontextprotocol/sdk` + `zod` (for `saki mcp`, lazy-loaded — every other
-command still pays no cost for them). Otherwise: node's built-in `fetch`, `node:*` builtins, and a
-hand-rolled arg parser.
+command still pays no cost for them), plus `undici` (daemon Unix-socket transport). Otherwise: node's
+built-in `fetch`, `node:*` builtins, and a hand-rolled arg parser.
