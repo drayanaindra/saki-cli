@@ -1,5 +1,7 @@
 # saki
 
+[![npm](https://img.shields.io/npm/v/%40saketek%2Fsaki-cli)](https://www.npmjs.com/package/@saketek/saki-cli)
+
 A headless build orchestrator for coding agents. `saki` drives a disciplined
 **PRD → plan → build → QA → review** journey from a terminal, spawning **claude**, **codex** or
 **opencode** and supervising the runs — no UI, no browser.
@@ -9,7 +11,7 @@ progress-tied circuit breaker with a hard budget, and dedupe so the same work ca
 That is the part that makes unattended agent builds survivable.
 
 > **Status: v0.1, early.** The pieces below work and are tested, but this was extracted from a larger
-> tool and the packaging is not finished — see [Not built yet](#not-built-yet). Expect sharp edges.
+> tool — see [Not built yet](#not-built-yet) for what's still missing. Expect sharp edges.
 
 ## How the two repos fit together
 
