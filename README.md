@@ -27,6 +27,8 @@ build that never started.
 
 ## Requirements
 
+- **Supported platforms:** macOS + Linux (amd64/arm64) via the npm package; Windows is not yet
+  supported (build from source only, and the daemon lifecycle is untested there)
 - **Node ≥ 20** (the CLI) and **Go ≥ 1.25** (to build the backend from source)
 - **An engine on PATH**: `claude`, `codex`, or `opencode`
 - **`saki-builder` installed into that engine's profile** — e.g. `codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git && codex plugin add saki-builder@saketek`
@@ -34,13 +36,21 @@ build that never started.
 
 ## Quickstart
 
+**Install via npm** (macOS/Linux, amd64/arm64 — the backend binary downloads automatically):
+
+```bash
+npm install -g @saketek/saki-cli
+saki status
+```
+
+**Or build from source** (any platform Go ≥ 1.25 targets, and the only path on Windows):
+
 ```bash
 git clone https://github.com/drayanaindra/saki-cli.git && cd saki-cli
 npm install
 npm run build            # CLI  -> dist/index.js
 npm run backend:build    # Go   -> dist/saki-backend
 
-./dist/saki-backend &    # listens on 127.0.0.1:8788
 node dist/index.js status
 ```
 
@@ -97,7 +107,6 @@ Given the above: do not expose this port, and do not run it as a privileged user
 
 Honest list of what the packaging still lacks:
 
-- No published npm package — build from source for now
 - No daemon lifecycle (`saki` does not yet auto-start the backend) and no unix-socket transport
 - No MCP surface (`saki mcp`) for agents that prefer tools over a shell
 - `saki artifacts` is session-gated via the studio; the local stub `scripts/stub-studio.mjs` serves the route
