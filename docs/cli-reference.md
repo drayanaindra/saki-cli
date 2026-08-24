@@ -123,6 +123,7 @@ saki status                                  # is the studio up, and will it let
 saki mcp                                     # start an MCP server exposing journey commands as typed tools
 saki doctor [--profile <dir>]                # can each engine run a saki-builder command, before you dispatch
 saki init-env --engine <e> [--profile <dir>] # provision ONE engine profile, then prove it
+saki roadmap init                            # scaffold tasks/roadmap.md (spawns /saki-builder:roadmap init)
 saki roadmap list                            # work items in this repo
 saki roadmap add "<intent>" --feature        # also --epic --improvement --bug (one is required)
 

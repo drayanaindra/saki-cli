@@ -46,7 +46,7 @@ export async function cmdRoadmapList(ctx: Ctx): Promise<ExitCode> {
     fail(
       `no tasks/roadmap.md found in ${ctx.cwd}`,
       EXIT.NOT_FOUND,
-      'scaffold one with `/saki-builder:roadmap init` in that repo',
+      'scaffold one with `saki roadmap init`',
     )
   }
   const items = res.epics ?? []
@@ -58,6 +58,22 @@ export async function cmdRoadmapList(ctx: Ctx): Promise<ExitCode> {
     },
     ctx.write,
   )
+  return EXIT.OK
+}
+
+// `saki roadmap init` — spawns the /saki-builder:roadmap skill to scaffold tasks/roadmap.md.
+//
+// No REST path here either, same reason as cmdRoadmapAdd: GET /api/roadmap is read-only, so
+// creating the file is a headless skill run, not a board write.
+export async function cmdRoadmapInit(ctx: Ctx): Promise<ExitCode> {
+  const res = await ctx.client.post<{ runId?: string }>('/api/run', {
+    prompt: '/saki-builder:roadmap init',
+    cwd: ctx.cwd,
+  })
+  const runId = res?.runId
+  if (!runId) fail('the studio accepted the init but returned no runId', EXIT.ERROR)
+
+  emit({ runId }, { json: ctx.json, human: `started ${runId} — scaffolding tasks/roadmap.md` }, ctx.write)
   return EXIT.OK
 }
 

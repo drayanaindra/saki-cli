@@ -19,7 +19,7 @@ import {
   supportsHeal,
   type RunVerb,
 } from './commands/run.js'
-import { cmdRoadmapList, cmdRoadmapAdd } from './commands/roadmap.js'
+import { cmdRoadmapList, cmdRoadmapAdd, cmdRoadmapInit } from './commands/roadmap.js'
 import { cmdPrdShow, cmdPrdLock } from './commands/prd.js'
 import { cmdProto } from './commands/proto.js'
 import {
@@ -156,6 +156,13 @@ const COMMANDS: CommandDef[] = [
     summary: 'provision and verify one engine profile',
     flags: { ...COMMON, engine: 'string', profile: 'string' },
     run: (ctx, positionals, flags) => cmdInitEnv(ctx, positionals, flags),
+  },
+  {
+    path: ['roadmap', 'init'],
+    usage: 'saki roadmap init',
+    summary: 'scaffold tasks/roadmap.md (spawns /saki-builder:roadmap init)',
+    flags: COMMON,
+    run: (ctx) => cmdRoadmapInit(ctx),
   },
   {
     path: ['roadmap', 'list'],

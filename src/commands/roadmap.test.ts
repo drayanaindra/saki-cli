@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cmdRoadmapList, cmdRoadmapAdd, ADD_FLAG, resolveAddType } from './roadmap.js'
+import { cmdRoadmapList, cmdRoadmapAdd, cmdRoadmapInit, ADD_FLAG, resolveAddType } from './roadmap.js'
 import { StudioClient } from '../client.js'
 import { makeCtx } from '../ctx.js'
 import { EXIT } from '../exit.js'
@@ -103,6 +103,20 @@ describe('cmdRoadmapList', () => {
     const { ctx, out } = ctxFor({ body: { found: true, epics: [] } })
     expect(await cmdRoadmapList(ctx)).toBe(EXIT.OK)
     expect(out[0]).toContain('no work items')
+  })
+})
+
+describe('cmdRoadmapInit', () => {
+  it('spawns /saki-builder:roadmap init', async () => {
+    const { ctx, posts, out } = ctxFor({ status: 201, body: { runId: 'r1' } })
+    expect(await cmdRoadmapInit(ctx)).toBe(EXIT.OK)
+    expect(posts[0]).toMatchObject({ prompt: '/saki-builder:roadmap init', cwd: '/repo' })
+    expect(out[0]).toContain('r1')
+  })
+
+  it('fails when the studio returns no runId', async () => {
+    const { ctx } = ctxFor({ status: 201, body: {} })
+    await expect(cmdRoadmapInit(ctx)).rejects.toMatchObject({ code: EXIT.ERROR })
   })
 })
 
