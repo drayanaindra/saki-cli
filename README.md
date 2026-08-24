@@ -45,6 +45,21 @@ npm install -g @saketek/saki-cli
 saki status
 ```
 
+**Or install via Homebrew** (macOS/Linux — runs `saki-backend` as a persistent background service
+instead of the CLI's lazy per-command auto-start, useful if something other than `saki` itself needs
+to reach the backend independently):
+
+```bash
+brew tap drayanaindra/tap
+brew install saki
+brew services start saki
+```
+
+If you've already used the `saki` CLI directly (which lazily spawns its own backend), run
+`saki backend stop` first — `saki-backend` binds `127.0.0.1:8788` exclusively and exits immediately
+if the port's already held, so a lazily-spawned instance and the brew service can't both own it. Once
+the service owns the port, `saki` CLI commands reuse it automatically — no conflict in that direction.
+
 **Or build from source** (any platform Go ≥ 1.25 targets, and the only path on Windows):
 
 ```bash

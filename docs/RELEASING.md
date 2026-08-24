@@ -34,6 +34,9 @@ human-run action — no agent triggers it automatically.
      `NPM_TOKEN`.
 8. Verify: `npm view @saketek/saki-cli version` matches `X.Y.Z`, and
    `npm install -g @saketek/saki-cli && saki status` resolves a working backend on a fresh machine.
+9. Update the Homebrew tap: in `drayanaindra/homebrew-tap`, bump `Formula/saki.rb`'s `version` and
+   all 4 URL/sha256 pairs to match the new release's `SHA256SUMS.txt`, commit, push. (Manual — no CI
+   automation yet; see the I4 plan's No-Gos.)
 
 ## If it goes wrong
 

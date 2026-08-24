@@ -1,0 +1,16 @@
+{
+  "task": "i4-homebrew-service",
+  "plan": "tasks/i4-homebrew-service-plan.md",
+  "branch": "main",
+  "item": "I4",
+  "steps": {
+    "rplan": {
+      "status": "done",
+      "artifact": "tasks/i4-homebrew-service-plan.md"
+    },
+    "approved": {
+      "status": "in-progress"
+    }
+  },
+  "updated": "2026-08-24"
+}
