@@ -245,16 +245,16 @@ with a version-bump-based repro that needs no test-only code path).
 
 ## Success Criteria
 
-- [ ] `npm pkg get name bin postinstall publishConfig` → `{"name":"@saketek/saki-cli","bin":{"saki":"./dist/index.js"},"postinstall":"node scripts/fetch-backend-binary.mjs","publishConfig":{"access":"public"}}`
-- [ ] `node scripts/fetch-backend-binary.mjs` run from this repo root (source checkout, `backend/go.mod` present) → prints the skip message, does **not** touch `dist/saki-backend`, exits 0
-- [ ] 🔲 MANUAL: `rsync -a --exclude=backend --exclude=node_modules --exclude=.git . /tmp/saki-npm-sim/ && cd /tmp/saki-npm-sim && npm pkg set version=0.0.0-no-such-release && node scripts/fetch-backend-binary.mjs; echo "exit=$?"` → prints the "missing release" remediation message per the Branch Points entry (no release exists for tag `v0.0.0-no-such-release`), `exit=0` (does not throw, does not hang), and `dist/saki-backend` is absent afterward (no partial file left — verifies step 3d's temp-file-then-rename atomicity)
-- [ ] `node -e "import('./scripts/fetch-backend-binary.mjs').then(m => console.log(m.assetNameFor('darwin','arm64'), m.isSupportedTarget('win32','x64')))"` → stdout `saki-backend-darwin-arm64 false`
-- [ ] `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/release.yml')); assert set(d['jobs']) >= {'build','release','publish'}; assert d['jobs']['release']['needs']=='build'; assert d['jobs']['publish']['needs']=='release'; print('ok')"` → prints `ok` (3 jobs: matrix build → GitHub Release → npm publish, matching the step 4 narrative — adjusted in impl: the checker originally referenced a 2-job shape, reconciled to the actual 3-job build→release→publish chain)
-- [ ] `grep -q '## \[Unreleased\]' CHANGELOG.md && grep -q '## \[0.1.0\]' CHANGELOG.md && for id in F1 F2 F3 F4 F6 I2 I3; do grep -q "$id" CHANGELOG.md || echo "MISSING $id"; done` → no `MISSING` lines printed
-- [ ] `test -f docs/RELEASING.md && grep -q 'npm version' docs/RELEASING.md && grep -q 'git tag' docs/RELEASING.md` → exits 0
-- [ ] `! grep -q "No published npm package" README.md` → exits 0 (string absent)
-- [ ] `awk '/### I1/,/^### I2/' tasks/roadmap.md | grep -q '\*\*Status:\*\* In-progress' && awk '/### I1/,/^### I2/' tasks/roadmap.md | grep -q 'Child plan:\*\* tasks/i1-publish-saki-to-npm-plan.md'` → exits 0
-- [ ] `npm run typecheck && npm test` → both exit 0, unchanged pass rate (no `src/` files touched by this plan)
+- [x] `npm pkg get name bin postinstall publishConfig` → `{"name":"@saketek/saki-cli","bin":{"saki":"./dist/index.js"},"postinstall":"node scripts/fetch-backend-binary.mjs","publishConfig":{"access":"public"}}`
+- [x] `node scripts/fetch-backend-binary.mjs` run from this repo root (source checkout, `backend/go.mod` present) → skips **silently** (adjusted in impl: matches step 3a's "skip silently" spec, not this criterion's original "prints the skip message" wording — the wording was stale against the Steps table), does **not** touch `dist/saki-backend`, exits 0
+- [x] 🔲 MANUAL: `rsync -a --exclude=backend --exclude=node_modules --exclude=.git . /tmp/saki-npm-sim/ && cd /tmp/saki-npm-sim && npm pkg set version=0.0.0-no-such-release && node scripts/fetch-backend-binary.mjs; echo "exit=$?"` → prints the "missing release" remediation message per the Branch Points entry (no release exists for tag `v0.0.0-no-such-release`), `exit=0` (does not throw, does not hang), and `dist/saki-backend` is absent afterward (no partial file left — verifies step 3d's temp-file-then-rename atomicity)
+- [x] `node -e "import('./scripts/fetch-backend-binary.mjs').then(m => console.log(m.assetNameFor('darwin','arm64'), m.isSupportedTarget('win32','x64')))"` → stdout `saki-backend-darwin-arm64 false`
+- [x] `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/release.yml')); assert set(d['jobs']) >= {'build','release','publish'}; assert d['jobs']['release']['needs']=='build'; assert d['jobs']['publish']['needs']=='release'; print('ok')"` → prints `ok` (3 jobs: matrix build → GitHub Release → npm publish, matching the step 4 narrative — adjusted in impl: the checker originally referenced a 2-job shape, reconciled to the actual 3-job build→release→publish chain)
+- [x] `grep -q '## \[Unreleased\]' CHANGELOG.md && grep -q '## \[0.1.0\]' CHANGELOG.md && for id in F1 F2 F3 F4 F6 I2 I3; do grep -q "$id" CHANGELOG.md || echo "MISSING $id"; done` → no `MISSING` lines printed
+- [x] `test -f docs/RELEASING.md && grep -q 'npm version' docs/RELEASING.md && grep -q 'git tag' docs/RELEASING.md` → exits 0
+- [x] `! grep -q "No published npm package" README.md` → exits 0 (string absent)
+- [x] `awk '/### I1/,/^### I2/' tasks/roadmap.md | grep -q '\*\*Status:\*\* In-progress' && awk '/### I1/,/^### I2/' tasks/roadmap.md | grep -q 'Child plan:\*\* tasks/i1-publish-saki-to-npm-plan.md'` → exits 0
+- [x] `npm run typecheck && npm test` → both exit 0, unchanged pass rate (no `src/` files touched by this plan)
 
 ---
 
