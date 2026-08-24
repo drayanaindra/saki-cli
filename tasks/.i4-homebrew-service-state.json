@@ -11,6 +11,9 @@
     "approved": {
       "status": "done",
       "lastCommit": "470450e"
+    },
+    "qa": {
+      "status": "done"
     }
   },
   "updated": "2026-08-24"
