@@ -118,6 +118,12 @@ describe('cmdRoadmapInit', () => {
     const { ctx } = ctxFor({ status: 201, body: {} })
     await expect(cmdRoadmapInit(ctx)).rejects.toMatchObject({ code: EXIT.ERROR })
   })
+
+  it('forwards --profile and --engine as configDir/engine', async () => {
+    const { ctx, posts } = ctxFor({ status: 201, body: { runId: 'r1' } })
+    await cmdRoadmapInit(ctx, { profile: '/prof', engine: 'codex' })
+    expect(posts[0]).toMatchObject({ configDir: '/prof', engine: 'codex' })
+  })
 })
 
 describe('cmdRoadmapAdd', () => {
@@ -148,5 +154,11 @@ describe('cmdRoadmapAdd', () => {
     const { ctx, posts } = ctxFor({ status: 201, body: { runId: 'r1' } })
     await expect(cmdRoadmapAdd(ctx, '   ', { epic: true })).rejects.toMatchObject({ code: EXIT.USAGE })
     expect(posts).toHaveLength(0)
+  })
+
+  it('forwards --profile and --engine as configDir/engine', async () => {
+    const { ctx, posts } = ctxFor({ status: 201, body: { runId: 'r1' } })
+    await cmdRoadmapAdd(ctx, 'idea', { feature: true }, { profile: '/prof', engine: 'opencode' })
+    expect(posts[0]).toMatchObject({ configDir: '/prof', engine: 'opencode' })
   })
 })

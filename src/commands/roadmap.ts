@@ -2,6 +2,14 @@ import { emit, renderTable, type Column } from '../output.js'
 import { EXIT, fail, type ExitCode } from '../exit.js'
 import type { Ctx } from '../ctx.js'
 import type { RoadmapItem, RoadmapResult, WorkItemType } from '../types.js'
+import type { RunEngine } from '../engines.js'
+
+// Same shape as RunStartFlags (commands/run.ts) — every skill spawn takes the same engine/profile
+// override, so `roadmap add`/`roadmap init` must accept them too, not just `saki run`.
+export interface RoadmapSpawnFlags {
+  profile?: string
+  engine?: RunEngine
+}
 
 // MIRRORS frontend/src/lib/addCommand.ts:9. Each type forces its flag, which is what skips the
 // skill's interactive "Confirm?" step so `/add` can be driven headlessly.
@@ -65,11 +73,15 @@ export async function cmdRoadmapList(ctx: Ctx): Promise<ExitCode> {
 //
 // No REST path here either, same reason as cmdRoadmapAdd: GET /api/roadmap is read-only, so
 // creating the file is a headless skill run, not a board write.
-export async function cmdRoadmapInit(ctx: Ctx): Promise<ExitCode> {
-  const res = await ctx.client.post<{ runId?: string }>('/api/run', {
+export async function cmdRoadmapInit(ctx: Ctx, flags: RoadmapSpawnFlags = {}): Promise<ExitCode> {
+  const body: Record<string, unknown> = {
     prompt: '/saki-builder:roadmap init',
     cwd: ctx.cwd,
-  })
+  }
+  if (flags.profile) body.configDir = flags.profile
+  if (flags.engine) body.engine = flags.engine
+
+  const res = await ctx.client.post<{ runId?: string }>('/api/run', body)
   const runId = res?.runId
   if (!runId) fail('the studio accepted the init but returned no runId', EXIT.ERROR)
 
@@ -86,6 +98,7 @@ export async function cmdRoadmapAdd(
   ctx: Ctx,
   intent: string,
   flags: Record<string, string | boolean>,
+  spawnFlags: RoadmapSpawnFlags = {},
 ): Promise<ExitCode> {
   // Validate BOTH inputs before any network call, so a malformed invocation can never spawn a run.
   const type = resolveAddType(flags)
@@ -94,10 +107,14 @@ export async function cmdRoadmapAdd(
     fail('roadmap add needs an intent', EXIT.USAGE, 'usage: saki roadmap add "<intent>" --feature')
   }
 
-  const res = await ctx.client.post<{ runId?: string }>('/api/run', {
+  const body: Record<string, unknown> = {
     prompt: `/saki-builder:add ${ADD_FLAG[type]} ${text}`,
     cwd: ctx.cwd,
-  })
+  }
+  if (spawnFlags.profile) body.configDir = spawnFlags.profile
+  if (spawnFlags.engine) body.engine = spawnFlags.engine
+
+  const res = await ctx.client.post<{ runId?: string }>('/api/run', body)
   const runId = res?.runId
   if (!runId) fail('the studio accepted the add but returned no runId', EXIT.ERROR)
 

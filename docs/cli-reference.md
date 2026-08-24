@@ -162,9 +162,9 @@ saki mcp                                     # start an MCP server exposing jour
 saki doctor [--profile <dir>]                # can each engine run a saki-builder command, before you dispatch
 saki init-env --engine <e> [--profile <dir>] # provision ONE engine profile, then prove it
 saki genesis "<product idea>" [--restart]    # start a product from scratch (spawns /saki-builder:genesis)
-saki roadmap init                            # scaffold tasks/roadmap.md (spawns /saki-builder:roadmap init)
-saki roadmap list                            # work items in this repo
-saki roadmap add "<intent>" --feature        # also --epic --improvement --bug (one is required)
+saki roadmap init [--profile <dir>] [--engine <e>]         # scaffold tasks/roadmap.md (spawns /saki-builder:roadmap init)
+saki roadmap list                                           # work items in this repo
+saki roadmap add "<intent>" --feature [--profile <dir>] [--engine <e>]  # also --epic --improvement --bug (one is required)
 
 saki build  <roadmap-id|prd-path> [--follow] [--engine <e>] [--profile <dir>]   # alias
 saki pickup <roadmap-id>                       [--follow] [--engine <e>]       # alias

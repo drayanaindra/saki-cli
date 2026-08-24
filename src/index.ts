@@ -18,6 +18,7 @@ import {
   RUN_ENGINES,
   supportsHeal,
   type RunVerb,
+  type RunEngine,
 } from './commands/run.js'
 import { cmdRoadmapList, cmdRoadmapAdd, cmdRoadmapInit } from './commands/roadmap.js'
 import { cmdGenesis } from './commands/genesis.js'
@@ -101,6 +102,16 @@ function flagsForVerb(verb: RunVerb): FlagSpec {
   return supportsHeal(verb) ? { ...RUN_FLAGS, heal: 'boolean' } : RUN_FLAGS
 }
 
+// Shared by every other command that spawns a skill run (roadmap add/init) but isn't a `saki run
+// <verb>` itself — same validate-before-spawn rule as startRun: a typo'd engine is a usage error
+// with the valid values named, not a round-trip to the backend's 422.
+function spawnFlagsFor(flags: Record<string, string | boolean>): { profile?: string; engine?: RunEngine } {
+  return {
+    profile: typeof flags.profile === 'string' ? flags.profile : undefined,
+    engine: typeof flags.engine === 'string' ? assertRunEngine(flags.engine) : undefined,
+  }
+}
+
 // Usage line reflects each verb's real arity: none / optional / required.
 function usageForVerb(verb: RunVerb): string {
   // Every run-start accepts --engine and --follow; only the target differs. Advertising the flag on
@@ -167,10 +178,10 @@ const COMMANDS: CommandDef[] = [
   },
   {
     path: ['roadmap', 'init'],
-    usage: 'saki roadmap init',
+    usage: `saki roadmap init [--profile <dir>] [--engine ${RUN_ENGINES.join('|')}]`,
     summary: 'scaffold tasks/roadmap.md (spawns /saki-builder:roadmap init)',
-    flags: COMMON,
-    run: (ctx) => cmdRoadmapInit(ctx),
+    flags: { ...COMMON, profile: 'string', engine: 'string' },
+    run: (ctx, _rest, flags) => cmdRoadmapInit(ctx, spawnFlagsFor(flags)),
   },
   {
     path: ['roadmap', 'list'],
@@ -181,10 +192,18 @@ const COMMANDS: CommandDef[] = [
   },
   {
     path: ['roadmap', 'add'],
-    usage: 'saki roadmap add "<intent>" --epic|--feature|--improvement|--bug',
+    usage: `saki roadmap add "<intent>" --epic|--feature|--improvement|--bug [--profile <dir>] [--engine ${RUN_ENGINES.join('|')}]`,
     summary: 'add a work item (spawns /saki-builder:add)',
-    flags: { ...COMMON, epic: 'boolean', feature: 'boolean', improvement: 'boolean', bug: 'boolean' },
-    run: (ctx, rest, flags) => cmdRoadmapAdd(ctx, rest.join(' '), flags),
+    flags: {
+      ...COMMON,
+      epic: 'boolean',
+      feature: 'boolean',
+      improvement: 'boolean',
+      bug: 'boolean',
+      profile: 'string',
+      engine: 'string',
+    },
+    run: (ctx, rest, flags) => cmdRoadmapAdd(ctx, rest.join(' '), flags, spawnFlagsFor(flags)),
   },
   {
     path: ['run', 'tail'],
