@@ -1,6 +1,6 @@
 {
   "name": "@saketek/saki-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Headless command line for the saki build orchestrator — drive a PRD → plan → build → QA → review journey from a terminal, on claude, codex or opencode.",
   "license": "MIT",

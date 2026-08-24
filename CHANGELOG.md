@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-24
+
+### Added
+
+- `saki roadmap init` — scaffolds `tasks/roadmap.md` by spawning `/saki-builder:roadmap init`,
+  same pattern as `saki roadmap add`, instead of requiring the skill to be invoked directly.
+- `saki genesis "<product idea>" [--restart]` — starts a product from scratch by spawning
+  `/saki-builder:genesis`, giving the greenfield entry point a real CLI verb.
+
 ## [0.1.0] - 2026-08-23
 
 ### Added
@@ -31,5 +40,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **I3** — `saki doctor` / spawn-preflight now verify per-skill coverage, not just plugin presence,
   catching a stale or partial `saki-builder` install before a run instead of after.
 
-[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/drayanaindra/saki-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/drayanaindra/saki-cli/releases/tag/v0.1.0
