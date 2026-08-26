@@ -218,6 +218,60 @@ func pluginProvenProfile(t *testing.T) string {
 // Covers the fresh spawn AND the auto-resume successor: buildengine.go:205 rebuilds the SpawnSpec from
 // run.Prompt/run.Engine verbatim, so a successor is byte-identical in shape to this spec (🔒 BR2 — a
 // resumed opencode build must not silently fall back to the unresolvable message form).
+func TestSpawn_OpencodeProtoTargetIsParsedBySkill(t *testing.T) {
+	cfgDir := pluginProvenProfile(t)
+	j := NewFileJournal(t.TempDir())
+	env := buildSpawnEnv(usecase.SpawnSpec{
+		ID:        "proto-env",
+		Prompt:    "/saki-builder:proto F3",
+		ConfigDir: &cfgDir,
+		Kind:      "generate",
+		Engine:    domain.EngineOpencode,
+	}, j)
+	for _, value := range env {
+		if value == "SAKI_PROMPT=/proto F3" {
+			return
+		}
+	}
+	t.Fatalf("SAKI_PROMPT not normalized for proto: %v", env)
+}
+
+func TestSpawn_OpencodeProtoTargetReachesCommand(t *testing.T) {
+	writeArgvRecordingOpencode(t)
+	cfgDir := pluginProvenProfile(t)
+	j := NewFileJournal(t.TempDir())
+	sp := NewShSpawner(j)
+
+	_, wait, err := sp.Spawn(usecase.SpawnSpec{
+		ID:        "proto-r1",
+		Prompt:    "/saki-builder:proto F3",
+		ConfigDir: &cfgDir,
+		Kind:      "generate",
+		Engine:    domain.EngineOpencode,
+	})
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	if code := wait(); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+
+	argv, err := os.ReadFile(j.OutPath("proto-r1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimRight(string(argv), "\n"), "\n")
+	want := []string{"run", "--format", "json", "--auto", "--command", "proto", "--", "/proto F3"}
+	if len(got) != len(want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("argv = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestSpawn_OpencodeInvokesTheCommandNotTheRawSlashText(t *testing.T) {
 	writeArgvRecordingOpencode(t)
 	cfgDir := pluginProvenProfile(t)

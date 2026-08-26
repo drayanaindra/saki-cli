@@ -234,6 +234,9 @@ func buildSpawnEnv(spec usecase.SpawnSpec, journal usecase.Journal) []string {
 	name, args, ok := opencodeCommandSplit(spec)
 	if ok {
 		prompt = args
+		if name == "proto" {
+			prompt = "/proto " + args
+		}
 	} else {
 		// Symmetric with the CLAUDE_CONFIG_DIR / OPENCODE_CONFIG drops above: never let an inherited
 		// SAKI_CMD leak into a spawn that is NOT using the --command form. Harmless today (the script
