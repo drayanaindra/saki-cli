@@ -127,14 +127,17 @@ describe('cmdRoadmapInit', () => {
 })
 
 describe('cmdRoadmapAdd', () => {
-  it('spawns /saki-builder:add with the type flag ahead of the intent', async () => {
+  it('spawns /saki-builder:add with an autonomous complete shape', async () => {
     // There is no POST /api/roadmap — GET /api/roadmap is read-only (index.ts:759), so an add is
     // a headless skill run. The flag is what keeps /add non-interactive.
     const { ctx, posts } = ctxFor({ status: 201, body: { runId: 'r1' } })
     expect(await cmdRoadmapAdd(ctx, 'let buyers save a cart', { feature: true })).toBe(EXIT.OK)
     expect(posts[0]).toMatchObject({
-      prompt: '/saki-builder:add --feature let buyers save a cart',
+      prompt: expect.stringContaining('/saki-builder:add --feature --autonomous Title: let buyers save a cart'),
       cwd: '/repo',
+    })
+    expect(posts[0]).toMatchObject({
+      prompt: expect.stringContaining('Success signal: TBD — define before pickup.'),
     })
   })
 

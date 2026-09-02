@@ -107,8 +107,19 @@ export async function cmdRoadmapAdd(
     fail('roadmap add needs an intent', EXIT.USAGE, 'usage: saki roadmap add "<intent>" --feature')
   }
 
+  // `/add --<type>` skips categorization but still asks for shape confirmation. The CLI is a
+  // headless caller, so provide the complete minimum shape and use the builder's durable
+  // orchestrator path. This is intentionally a prompt-level contract: it works with the installed
+  // plugin without requiring an interactive stdin channel or a project-local plugin copy.
+  const shape = [
+    `Title: ${text}`,
+    `Goal: Enable users to achieve "${text}".`,
+    `Target user & Job (JTBD): As a project user, when I need ${text}, I want to use this capability so I can complete that task.`,
+    'User flow: Identify the need → use the capability → verify the outcome.',
+    'Success signal: TBD — define before pickup.',
+  ].join(' | ')
   const body: Record<string, unknown> = {
-    prompt: `/saki-builder:add ${ADD_FLAG[type]} ${text}`,
+    prompt: `/saki-builder:add ${ADD_FLAG[type]} --autonomous ${shape}`,
     cwd: ctx.cwd,
   }
   if (spawnFlags.profile) body.configDir = spawnFlags.profile

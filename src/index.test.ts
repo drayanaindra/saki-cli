@@ -122,7 +122,7 @@ describe('main', () => {
   it('prints the package version without starting a daemon', async () => {
     const r = run(['--version'])
     expect(await r.code).toBe(EXIT.OK)
-    expect(r.out).toEqual(['0.4.0'])
+    expect(r.out).toEqual(['0.4.1'])
     expect(r.err).toEqual([])
     expect(r.urls).toEqual([])
   })

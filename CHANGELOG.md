@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-02
+
+### Fixed
+
+- `saki roadmap add` now supplies the complete autonomous intake shape, so headless runs do not stop
+  at interactive confirmation for either OpenCode or Codex.
+
 ## [0.4.0] - 2026-09-02
 
 ### Added
