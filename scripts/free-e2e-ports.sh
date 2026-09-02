@@ -10,7 +10,7 @@
 #
 # Idempotent and non-fatal: no listener on a port is fine, and it always exits 0 so it never blocks
 # the e2e run (lsof missing → empty result → skip; matters only locally, CI boots fresh anyway).
-for port in 5180 8787 8788; do
+for port in 5180 8787 8788 8791; do
   pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null)"
   if [ -n "$pids" ]; then
     echo "pree2e: freeing :$port (pids: $pids)"

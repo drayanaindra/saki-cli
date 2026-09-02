@@ -1,0 +1,15 @@
+{
+  "prd": "tasks/prd-hands-off-build-workflow-pickup-multi-turn-completion-and-continuation.md",
+  "branch": "feature/doctor-opencode-remediation-text",
+  "commitPolicy": "per-step",
+  "reviewBase": "3c7e6a1",
+  "completion": { "status": "complete", "workflowId": "a7dde114-c3a6-49cc-9efb-4f5c5d2973a3", "verifiedAt": 1788337204599, "evidence": "durable workflow verification passed; real Codex and OpenCode spawn journeys passed; Claude real-profile journey is explicitly skipped because Claude cannot isolate plugin state" },
+  "slices": [
+    { "n": 1, "title": "durable workflow identity and state machine", "status": "done", "steps": { "rplan": { "status": "done", "artifact": "tasks/prd-hands-off-build-workflow-pickup-multi-turn-completion-and-continuation.md" }, "approved": { "status": "done", "commit": "3c7e6a1" }, "qa": { "status": "done", "evidence": "backend workflow unit tests" }, "reviewer": { "status": "done" } } },
+    { "n": 2, "title": "PRD-track orchestration", "status": "done", "steps": { "rplan": { "status": "done", "artifact": "tasks/prd-hands-off-build-workflow-pickup-multi-turn-completion-and-continuation.md" }, "approved": { "status": "done", "commit": "3c7e6a1" }, "qa": { "status": "done", "evidence": "pickup, proto, lock, and build transition tests" }, "reviewer": { "status": "done" } } },
+    { "n": 3, "title": "Plan-track orchestration", "status": "done", "steps": { "rplan": { "status": "done", "artifact": "tasks/prd-hands-off-build-workflow-pickup-multi-turn-completion-and-continuation.md" }, "approved": { "status": "done", "commit": "3c7e6a1" }, "qa": { "status": "done", "evidence": "Plan-track phase isolation test" }, "reviewer": { "status": "done" } } },
+    { "n": 4, "title": "whole-workflow follow, retry dedupe, and restart survival", "status": "done", "steps": { "rplan": { "status": "done", "artifact": "tasks/prd-hands-off-build-workflow-pickup-multi-turn-completion-and-continuation.md" }, "approved": { "status": "done", "commit": "3c7e6a1" }, "qa": { "status": "done", "evidence": "rehydration, successor adoption, and CLI SSE tests" }, "reviewer": { "status": "done" } } },
+    { "n": 5, "title": "completion evidence and explicit continuation", "status": "done", "steps": { "rplan": { "status": "done", "artifact": "tasks/prd-hands-off-build-workflow-pickup-multi-turn-completion-and-continuation.md" }, "approved": { "status": "done", "commit": "3c7e6a1" }, "qa": { "status": "done", "evidence": "manifest verifier, sentinel rejection, decision, and stop tests" }, "reviewer": { "status": "done" } } },
+    { "n": 6, "title": "CLI contract, docs, and engine plumbing", "status": "done", "steps": { "rplan": { "status": "done", "artifact": "tasks/prd-hands-off-build-workflow-pickup-multi-turn-completion-and-continuation.md" }, "approved": { "status": "done", "commit": "3c7e6a1" }, "qa": { "status": "done", "evidence": "npm run typecheck; npm test; npm run backend:test; go vet; backend build" }, "reviewer": { "status": "done" } } }
+  ]
+}

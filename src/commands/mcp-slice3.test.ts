@@ -102,7 +102,7 @@ const BUILD_STUB_CHAIN = {
   '/api/prd': { body: PRD },
   '/api/runs': { body: [] },
   '/api/run/': { status: 404, body: { error: 'not found' } },
-  '/api/run': { body: { runId: 'r1', deduped: false } },
+  '/api/workflow': { body: { workflowId: 'w1', phase: 'build', status: 'running', deduped: false } },
 }
 
 describe('saki mcp — slice 3 run lifecycle tools', () => {
@@ -113,14 +113,14 @@ describe('saki mcp — slice 3 run lifecycle tools', () => {
     const result = await mcpClient.callTool({ name: 'saki_run_start', arguments: { verb: 'build', target: 'F5' } })
     expect(result.isError).toBe(false)
     const content = result.content as Content
-    expect(JSON.parse(content[0].text)).toEqual({ runId: 'r1', deduped: false })
+    expect(JSON.parse(content[0].text)).toMatchObject({ workflowId: 'w1', deduped: false })
 
     // the roadmap id must resolve to the real absolute PRD path — the dedupe-lane identity
     // (run.ts:131-144) — not the raw "F5" argument, before it ever reaches the spawn prompt
-    const runPost = posted.find((p) => p.url.includes('/api/run') && !p.url.includes('/api/run/'))
-    const body = runPost?.body as { prompt?: string; meta?: { laneKey?: string } }
-    expect(body?.prompt).toBe('/saki-builder:build /repo/tasks/prd-f5.md')
-    expect(body?.meta?.laneKey).toBe('/repo/tasks/prd-f5.md')
+    const runPost = posted.find((p) => p.url.includes('/api/workflow'))
+    const body = runPost?.body as { prompt?: string; target?: string; meta?: { laneKey?: string } }
+    expect(body?.prompt).toBeUndefined()
+    expect((body as { target?: string })?.target).toBe('F5')
   })
 
   it('mcp3: run_start unknown verb', async () => {
@@ -167,10 +167,10 @@ describe('saki mcp — slice 3 run lifecycle tools', () => {
 
     const started = await mcpClient.callTool({ name: 'saki_run_start', arguments: { verb: 'build', target: 'F5' } })
     expect(started.isError).toBe(false)
-    const { runId } = JSON.parse((started.content as Content)[0].text)
-    expect(runId).toBe('r1') // sanity: matches the stub, so the threading assertion below is meaningful
+    const { workflowId } = JSON.parse((started.content as Content)[0].text)
+    expect(workflowId).toBe('w1') // sanity: matches the stub, so the threading assertion below is meaningful
 
-    const tailed = await mcpClient.callTool({ name: 'saki_run_tail', arguments: { runId } })
+    const tailed = await mcpClient.callTool({ name: 'saki_run_tail', arguments: { runId: workflowId } })
     expect(tailed.isError).toBe(false)
     const statusBlock = findStatusBlock(tailed.content as Content)
     expect(statusBlock?.status).toBe('done')

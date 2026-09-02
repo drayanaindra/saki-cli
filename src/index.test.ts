@@ -119,6 +119,14 @@ describe('main', () => {
     expect(r.out.join('\n')).toContain('Commands:')
   })
 
+  it('prints the package version without starting a daemon', async () => {
+    const r = run(['--version'])
+    expect(await r.code).toBe(EXIT.OK)
+    expect(r.out).toEqual(['0.3.1'])
+    expect(r.err).toEqual([])
+    expect(r.urls).toEqual([])
+  })
+
   it('exits USAGE on an unknown command and names it', async () => {
     const r = run(['frobnicate'])
     expect(await r.code).toBe(EXIT.USAGE)
@@ -201,14 +209,12 @@ describe('main', () => {
     expect(r.out[0]).toBe('[]')
   })
 
-  it('routes a full build invocation to POST /api/run', async () => {
+  it('routes a full build invocation to POST /api/workflow', async () => {
     const r = run(['run', 'build', 'tasks/prd-x.md'], {
-      // A build confirms its PRD exists before spawning.
-      '/api/prd': { body: { found: true, path: '/repo/tasks/prd-x.md' } },
-      '/api/run': { status: 201, body: { runId: 'r9' } },
+      '/api/workflow': { status: 201, body: { workflowId: 'w9', phase: 'build', status: 'running', deduped: false } },
     })
     expect(await r.code).toBe(EXIT.OK)
-    expect(r.out.join('\n')).toContain('r9')
+    expect(r.out.join('\n')).toContain('w9')
   })
 
   it('collects a multi-word roadmap add intent from the positionals', async () => {
@@ -232,14 +238,13 @@ describe('main', () => {
   // already means "print the URL of an already-rendered gallery", so a top-level `saki proto` can
   // not also mean "render one".
   describe('top-level run-verb aliases', () => {
-    const PRD_OK = { '/api/prd': { body: { found: true, path: '/repo/tasks/prd-x.md' } } }
 
     it('saki build <path> is identical to saki run build <path>', async () => {
-      const viaAlias = run(['build', 'tasks/prd-x.md'], { ...PRD_OK, '/api/run': { status: 201, body: { runId: 'r1' } } })
+      const viaAlias = run(['build', 'tasks/prd-x.md'], { '/api/workflow': { status: 201, body: { workflowId: 'w1', phase: 'build', status: 'running', deduped: false } } })
       expect(await viaAlias.code).toBe(EXIT.OK)
       const aliasPost = viaAlias.bodies[0]
 
-      const viaNested = run(['run', 'build', 'tasks/prd-x.md'], { ...PRD_OK, '/api/run': { status: 201, body: { runId: 'r1' } } })
+      const viaNested = run(['run', 'build', 'tasks/prd-x.md'], { '/api/workflow': { status: 201, body: { workflowId: 'w1', phase: 'build', status: 'running', deduped: false } } })
       expect(await viaNested.code).toBe(EXIT.OK)
       expect(aliasPost).toEqual(viaNested.bodies[0])
     })
@@ -379,8 +384,7 @@ describe('main', () => {
 
   it('--engine opencode reaches the request body', async () => {
     const r = run(['build', 'tasks/prd-x.md', '--engine', 'opencode'], {
-      '/api/prd': { body: { found: true, path: '/repo/tasks/prd-x.md' } },
-      '/api/run': { status: 201, body: { runId: 'r1' } },
+      '/api/workflow': { status: 201, body: { workflowId: 'w1', phase: 'build', status: 'running', deduped: false } },
     })
     expect(await r.code).toBe(EXIT.OK)
     expect(r.bodies[0]).toMatchObject({ engine: 'opencode' })
@@ -388,8 +392,7 @@ describe('main', () => {
 
   it('omits engine entirely when not given (backend default = claude)', async () => {
     const r = run(['build', 'tasks/prd-x.md'], {
-      '/api/prd': { body: { found: true, path: '/repo/tasks/prd-x.md' } },
-      '/api/run': { status: 201, body: { runId: 'r1' } },
+      '/api/workflow': { status: 201, body: { workflowId: 'w1', phase: 'build', status: 'running', deduped: false } },
     })
     await r.code
     expect((r.bodies[0] as Record<string, unknown>).engine).toBeUndefined()

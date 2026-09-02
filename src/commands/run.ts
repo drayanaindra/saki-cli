@@ -1,10 +1,12 @@
 import { emit } from '../output.js'
 import { EXIT, fail, type ExitCode } from '../exit.js'
 import { cmdRunTail } from './runs.js'
+import { streamWorkflow } from '../sse.js'
+import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path'
 import { fetchPrd, resolveTargetPrdPath } from './prd.js'
 import { findItem, resolvePlanPath } from '../resolve.js'
 import type { Ctx } from '../ctx.js'
-import type { RoadmapResult, RunSummary } from '../types.js'
+import type { RoadmapResult, WorkflowStartResult } from '../types.js'
 
 // The saki-builder skills the CLI can launch headlessly — the full manual chain
 // (rplan → rplan-review → approved → qa → reviewer → wrap) plus the PRD-track entry points
@@ -103,11 +105,15 @@ export interface RunStartFlags {
   heal?: boolean
 }
 
+export interface ContinueFlags {
+  option?: string
+}
+
 // Turn the user's argument into the exact target the skill should receive.
 //
 // Each verb points at a different artifact, and getting this wrong reviews or builds the wrong
 // thing rather than failing loudly:
-//   build         -> the absolute PRD path (also the studio's dedupe lane key — see below)
+//   build         -> the raw roadmap id/path (the backend owns workflow lane resolution)
 //   prd-review    -> the item's Child PRD
 //   rplan-review  -> the item's Child PLAN (a DIFFERENT roadmap field — roadmap.ts:36)
 //   pickup/proto/rplan -> the raw argument; these skills take an item id themselves
@@ -146,22 +152,6 @@ async function resolveTarget(ctx: Ctx, verb: RunVerb, arg: string): Promise<stri
   return a
 }
 
-// Ids of builds already running for this lane. Used only to report re-adoption honestly — the
-// server remains authoritative for whether a second build is actually spawned.
-async function activeBuildIds(ctx: Ctx, laneKey: string): Promise<Set<string>> {
-  try {
-    const runs = await ctx.client.get<RunSummary[]>('/api/runs', { cwd: ctx.cwd })
-    return new Set(
-      (Array.isArray(runs) ? runs : [])
-        .filter((r) => r.status === 'running' && r.meta?.kind === 'build' && r.meta?.laneKey === laneKey)
-        .map((r) => r.id),
-    )
-  } catch {
-    // Reporting nicety only — never let it block a spawn.
-    return new Set()
-  }
-}
-
 interface RunStartResponse {
   runId?: string
   deduped?: boolean
@@ -187,6 +177,10 @@ export async function cmdRunStart(
     )
   }
 
+  // Build is the hands-off workflow entry point. The backend resolves roadmap ids and absent PRDs;
+  // the CLI deliberately sends the user's target unchanged and never performs a prerequisite read.
+  if (verb === 'build') return cmdWorkflowStart(ctx, arg, flags)
+
   const target = await resolveTarget(ctx, verb, arg)
 
   // `--heal` is part of the COMMAND, not the request: the skill parses it from its own invocation
@@ -199,22 +193,11 @@ export async function cmdRunStart(
   }
   if (flags.profile) body.configDir = flags.profile
   if (flags.engine) body.engine = flags.engine
-  if (verb === 'build') body.meta = { kind: 'build', laneKey: target }
-
-  // Snapshot the lane's live builds BEFORE spawning, so a re-adoption can be reported honestly.
-  //
-  // The two backends answer differently: Express returns `{runId, deduped:true}` when it re-adopts,
-  // but the Go build path (backend/adapter/http.go:458 → writeSpawnResult) returns only `{runId}`.
-  // Go still dedupes — it just doesn't say so. Without this the CLI prints "started <id>" for a run
-  // it did not start. Comparing against the pre-spawn set covers both: if the id we get back was
-  // already running, it was re-adopted.
-  const before = verb === 'build' ? await activeBuildIds(ctx, target) : new Set<string>()
-
   const res = await ctx.client.post<RunStartResponse>('/api/run', body)
   const runId = res?.runId
   if (!runId) fail('the studio accepted the run but returned no runId', EXIT.ERROR)
 
-  const deduped = res.deduped === true || before.has(runId)
+  const deduped = res.deduped === true
   emit(
     { runId, deduped },
     {
@@ -230,4 +213,71 @@ export async function cmdRunStart(
   // agent can do `saki run build x --follow && next-step`.
   if (flags.follow) return cmdRunTail(ctx, runId)
   return EXIT.OK
+}
+
+export async function cmdWorkflowStart(ctx: Ctx, target: string, flags: RunStartFlags): Promise<ExitCode> {
+  if (!target.trim()) fail('build needs an argument', EXIT.USAGE, 'usage: saki build <roadmap-id|path>')
+  const normalized = target.trim()
+  validateWorkflowTarget(ctx.cwd, normalized)
+  const body: Record<string, unknown> = { cwd: ctx.cwd, target: normalized }
+  if (flags.profile) body.configDir = flags.profile
+  if (flags.engine) body.engine = flags.engine
+  const result = await ctx.client.post<WorkflowStartResult>('/api/workflow', body)
+  if (!result?.workflowId) fail('the backend accepted the workflow but returned no workflowId', EXIT.ERROR)
+  emit(
+    result,
+    {
+      json: ctx.json,
+      human: result.deduped
+        ? `${result.workflowId} already running for this lane — reusing it`
+        : `started workflow ${result.workflowId} (${result.phase})`,
+    },
+    ctx.write,
+  )
+  if (!flags.follow) return workflowExitCode(result.status)
+  return cmdWorkflowTail(ctx, result.workflowId)
+}
+
+function validateWorkflowTarget(cwd: string, target: string): void {
+  if (/^[EFIB]\d+$/i.test(target)) return
+  if (!/\.md$/i.test(target) || target.includes('\0')) {
+    fail(`invalid build target: ${target}`, EXIT.USAGE, 'use a roadmap id such as F7 or a .md path inside the repo')
+  }
+  const root = resolvePath(cwd)
+  const absolute = resolvePath(root, target)
+  const rel = relative(root, absolute)
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    fail(`target "${target}" resolves outside the repo (${root}) — refusing to start a workflow`, EXIT.USAGE)
+  }
+}
+
+function workflowExitCode(status: WorkflowStartResult['status']): ExitCode {
+  return status === 'running' || status === 'done' ? EXIT.OK : EXIT.ERROR
+}
+
+export async function cmdWorkflowTail(ctx: Ctx, workflowId: string): Promise<ExitCode> {
+  if (!workflowId) fail('workflow follow needs a workflow id', EXIT.USAGE)
+  const end = await streamWorkflow(ctx.client, workflowId, (line) => ctx.write(line))
+  const ok = end.status === 'done'
+  if (ctx.json) {
+    emit({ workflowId, ...end }, { json: true }, ctx.write)
+  } else {
+    const reason = end.reason ? ` — ${end.reason}` : ''
+    ctx.write(`workflow ${end.status}${reason}`)
+  }
+  return ok ? EXIT.OK : EXIT.ERROR
+}
+
+export async function cmdRunContinue(ctx: Ctx, workflowId: string, flags: ContinueFlags): Promise<ExitCode> {
+  if (!workflowId) fail('run continue needs a workflow id', EXIT.USAGE, 'usage: saki run continue <workflowId> [--option <value>]')
+  const result = await ctx.client.post<WorkflowStartResult>(`/api/workflow/${encodeURIComponent(workflowId)}/continue`, {
+    option: flags.option ?? '',
+  })
+  if (!result?.workflowId) fail('the backend returned no workflowId', EXIT.ERROR)
+  emit(
+    result,
+    { json: ctx.json, human: `workflow ${result.workflowId} ${result.status} at ${result.phase}` },
+    ctx.write,
+  )
+  return workflowExitCode(result.status)
 }

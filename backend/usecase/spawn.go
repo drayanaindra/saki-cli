@@ -70,6 +70,7 @@ func (s RunService) Spawn(req SpawnReq) (domain.Run, error) {
 		Cwd:       req.Cwd,
 		StartedAt: s.clock.Now(),
 		Meta:      req.Meta,
+		ConfigDir: req.ConfigDir,
 		Engine:    domain.ResolveEngine(req.Engine),
 	}
 	if err := s.journal.Write(run); err != nil { // durable record first; failure → 500, no spawn

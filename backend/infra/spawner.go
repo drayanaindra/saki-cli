@@ -72,9 +72,14 @@ func buildRunScript(kind domain.RunKind, engine domain.RunEngine, hasCmd bool) s
 		// coerces a numeric token to a number and the join hits `G.includes is not a function`. So a
 		// single quoted element is the only shape that runs at all; the skills tolerate the wrapping
 		// quotes. Verified against opencode 1.18.16 and pinned by the multi-word e2e assertion.
-		cmd = `opencode run --format json --auto -- "$SAKI_PROMPT"`
+		// Keep provider failures (quota, auth, unavailable model) in the durable journal. Without
+		// --print-logs OpenCode can retry a provider failure while emitting zero JSON events, which
+		// makes the studio follower look hung and leaves operators without an actionable reason.
+		// ERROR is deliberate: DEBUG/INFO can include provider or workspace details that do not belong
+		// in a run's user-visible output.
+		cmd = `opencode run --print-logs --log-level ERROR --format json --auto -- "$SAKI_PROMPT"`
 		if hasCmd {
-			cmd = `opencode run --format json --auto --command "$SAKI_CMD" -- "$SAKI_PROMPT"`
+			cmd = `opencode run --print-logs --log-level ERROR --format json --auto --command "$SAKI_CMD" -- "$SAKI_PROMPT"`
 		}
 	case domain.EngineCodex:
 		// codex takes the CLAUDE shape, not opencode's. Spiked against codex-cli 0.147.0: `codex exec`

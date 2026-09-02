@@ -59,14 +59,19 @@ function writeProbeProfile(): string {
       $schema: 'https://opencode.ai/config.json',
       // Declared so OpencodePluginProof (E26 9.4.1) proves green for this pinned profile.
       plugin: ['@saketek/saki-builder'],
-      // Pinned to the `opencode-go` PROVIDER, which is the one the operator's credential actually
-      // carries (auth.json holds exactly one entry: `opencode-go`). The earlier pin —
-      // `opencode/deepseek-v4-flash-free` — is a DIFFERENT provider namespace: the free tier resolves
-      // in `opencode models` but every call against it hangs with ZERO bytes, so the spec timed out
-      // at the SSE read and read as a resolution regression when nothing in the spawn path had
-      // changed. A model the credential covers is what makes this lock test the command form rather
-      // than the provider's free-tier availability.
-      model: 'opencode-go/deepseek-v4-flash',
+      // Use the local 9router provider rather than the metered OpenCode Go catalog. The latter can
+      // be listed while its account is exhausted, making a command-resolution test hang without
+      // producing any engine event. This provider is configured without a credential here; OpenCode
+      // resolves its auth from the operator's normal credential store, while the profile remains
+      // isolated and contains no secret material.
+      model: '9router/codex',
+      provider: {
+        '9router': {
+          npm: '@ai-sdk/openai-compatible',
+          options: { baseURL: 'http://127.0.0.1:20128/v1' },
+          models: { codex: { name: 'codex' } },
+        },
+      },
     }),
   )
   fs.writeFileSync(

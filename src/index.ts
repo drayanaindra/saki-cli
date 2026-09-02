@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { realpathSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { parseArgs, type FlagSpec } from './args.js'
 import { EXIT, CliError, type ExitCode } from './exit.js'
@@ -17,6 +18,7 @@ import {
   assertRunEngine,
   RUN_ENGINES,
   supportsHeal,
+  cmdRunContinue,
   type RunVerb,
   type RunEngine,
 } from './commands/run.js'
@@ -37,6 +39,8 @@ import { cmdDoctor } from './commands/doctor.js'
 import { cmdInitEnv } from './commands/init-env.js'
 import { cmdBackend } from './commands/backend.js'
 import { ensureDaemon, readDaemonState } from './daemon.js'
+
+const packageVersion: string = createRequire(import.meta.url)('../package.json').version
 
 // Flags every command accepts.
 const COMMON: FlagSpec = { json: 'boolean', cwd: 'string' }
@@ -206,6 +210,16 @@ const COMMANDS: CommandDef[] = [
     run: (ctx, rest, flags) => cmdRoadmapAdd(ctx, rest.join(' '), flags, spawnFlagsFor(flags)),
   },
   {
+    path: ['run', 'continue'],
+    usage: 'saki run continue <workflowId> [--option <value>]',
+    summary: 'resume a parked or awaiting workflow',
+    flags: { ...COMMON, option: 'string' },
+    run: (ctx, rest, flags) => {
+      if (rest.length > 1) throw new CliError('run continue takes exactly one workflow id', EXIT.USAGE)
+      return cmdRunContinue(ctx, rest[0] ?? '', { option: typeof flags.option === 'string' ? flags.option : undefined })
+    },
+  },
+  {
     path: ['run', 'tail'],
     usage: 'saki run tail <runId>',
     summary: 'stream a run, exit with its verdict',
@@ -327,6 +341,7 @@ export function helpText(): string {
     ...COMMANDS.map((c) => `  ${c.usage.padEnd(width + 2)}${c.summary}`),
     '',
     'Common flags:',
+    '  --version, -V    print the installed CLI version',
     '  --json            machine-readable output (one compact line)',
     '  --cwd <dir>       repo to act on (default: the current directory)',
     '',
@@ -354,6 +369,11 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<ExitCod
   const env = deps.env ?? process.env
 
   try {
+    if (argv.length === 1 && (argv[0] === '--version' || argv[0] === '-V')) {
+      write(packageVersion)
+      return EXIT.OK
+    }
+
     if (argv.length === 0) {
       write(helpText())
       return EXIT.OK
@@ -435,6 +455,9 @@ if (isDirectInvocation(process.argv[1], import.meta.url)) {
   const argv = process.argv.slice(2)
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
     console.log(helpText())
+    process.exitCode = EXIT.OK
+  } else if (argv.length === 1 && (argv[0] === '--version' || argv[0] === '-V')) {
+    console.log(packageVersion)
     process.exitCode = EXIT.OK
   } else {
     process.exitCode = await main(argv)

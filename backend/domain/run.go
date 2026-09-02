@@ -111,4 +111,5 @@ type Run struct {
 	LastOutSize      int64   `json:"-"` // last observed <id>.out byte size — growth = viewerless activity (Slice 3)
 	StallKilledAt    *int64  `json:"-"` // when the stall watchdog SIGTERM'd it (Slice 3)
 	StopRequested    bool    `json:"-"` // an operator Stop was requested → onExit must not auto-resume (BR2)
+	Finalizing       bool    `json:"-"` // exit observed; the build engine is durably deciding retry/park
 }

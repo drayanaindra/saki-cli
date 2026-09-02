@@ -8,20 +8,20 @@ function ctxFor(res: { status?: number; body?: unknown; stream?: string[] }, jso
   const bodies: unknown[] = []
   const impl = (async (url: string | URL, init?: RequestInit) => {
     if (init?.body) bodies.push(JSON.parse(String(init.body)))
-    // A build now confirms its PRD exists before spawning, so this stub must answer /api/prd.
-    // Echo the requested path straight back: the studio is the authority on the canonical path,
-    // and echoing keeps these tests asserting the CLI's own resolution rather than the stub's.
     const u = String(url)
-    if (u.includes('/api/prd')) {
-      const path = new URL(u).searchParams.get('path') ?? ''
+    const status = res.status ?? 201
+    if (u.includes('/api/workflow')) {
+      const body = res.body as Record<string, unknown> | undefined
       return {
-        ok: true,
-        status: 200,
-        json: async () => ({ found: true, path }),
-        text: async () => '',
+        ok: status < 300,
+        status,
+        json: async () =>
+          body?.workflowId
+            ? body
+            : { workflowId: body?.runId ?? 'w1', phase: 'build', status: 'running', deduped: body?.deduped === true },
+        text: async () => JSON.stringify(body ?? ''),
       } as unknown as Response
     }
-    const status = res.status ?? 201
     if (res.stream) {
       const enc = new TextEncoder()
       const body = new ReadableStream<Uint8Array>({
@@ -118,71 +118,32 @@ const ITEM = {
   phaseChain: null,
 }
 
-describe('cmdRunStart — resolving a roadmap id to the studio lane key', () => {
-  it('turns E12 into the absolute Child PRD path, in both prompt and laneKey', async () => {
+describe('cmdRunStart — workflow build contract', () => {
+  it('sends the roadmap id to the backend without a client-side PRD lookup', async () => {
     const { ctx, posts } = routedCtx({
-      '/api/roadmap': { body: { found: true, epics: [ITEM] } },
-      '/api/prd': { body: { found: true, path: '/repo/tasks/prd-checkout.md' } },
-      '/api/run': { status: 201, body: { runId: 'r1' } },
+      '/api/workflow': { status: 201, body: { workflowId: 'w1', phase: 'pickup', status: 'running', deduped: false } },
     })
     expect(await cmdRunStart(ctx, 'build', 'E12', {})).toBe(EXIT.OK)
-    expect(posts[0].body).toMatchObject({
-      prompt: '/saki-builder:build /repo/tasks/prd-checkout.md',
-      meta: { kind: 'build', laneKey: '/repo/tasks/prd-checkout.md' },
-    })
+    expect(posts[0].url).toContain('/api/workflow')
+    expect(posts[0].body).toMatchObject({ cwd: '/repo', target: 'E12' })
   })
 
-  // Every id failure path must spawn NOTHING — a run against an unresolvable target is a wasted
-  // `claude -p` on a lane no other surface can match.
-  it('spawns nothing when the repo has no roadmap', async () => {
-    const { ctx, posts } = routedCtx({ '/api/roadmap': { body: { found: false } } })
-    await expect(cmdRunStart(ctx, 'build', 'E12', {})).rejects.toMatchObject({ code: EXIT.NOT_FOUND })
+  it('rejects an escaping path before making a request', async () => {
+    const { ctx, posts } = routedCtx({})
+    await expect(cmdRunStart(ctx, 'build', '../outside.md', {})).rejects.toMatchObject({ code: EXIT.USAGE })
     expect(posts).toHaveLength(0)
   })
 
-  it('spawns nothing when the id is not on the roadmap', async () => {
-    const { ctx, posts } = routedCtx({ '/api/roadmap': { body: { found: true, epics: [ITEM] } } })
-    await expect(cmdRunStart(ctx, 'build', 'B99', {})).rejects.toMatchObject({ code: EXIT.NOT_FOUND })
+  it('rejects a target that is neither a roadmap id nor a markdown path', async () => {
+    const { ctx, posts } = routedCtx({})
+    await expect(cmdRunStart(ctx, 'build', 'not-a-target', {})).rejects.toMatchObject({ code: EXIT.USAGE })
     expect(posts).toHaveLength(0)
   })
 
-  it('spawns nothing when the item has no Child PRD yet', async () => {
-    const { ctx, posts } = routedCtx({
-      '/api/roadmap': { body: { found: true, epics: [{ ...ITEM, childPrd: null }] } },
-    })
-    await expect(cmdRunStart(ctx, 'build', 'E12', {})).rejects.toMatchObject({ code: EXIT.NOT_FOUND })
-    expect(posts).toHaveLength(0)
-  })
-
-  it('spawns nothing when the roadmap read is gated', async () => {
-    const { ctx, posts } = routedCtx({ '/api/roadmap': { status: 401, body: { error: 'auth' } } })
-    await expect(cmdRunStart(ctx, 'build', 'E12', {})).rejects.toMatchObject({ code: EXIT.AUTH_REQUIRED })
-    expect(posts).toHaveLength(0)
-  })
-
-  // RESIDUAL of BLOCKER 2, caught on re-review: a `.md` argument was path-resolved without an
-  // existence check, so a typo spawned a real build, and running from a SUBDIRECTORY produced
-  // `/repo/sub/tasks/prd-x.md` where the UI sends `/repo/tasks/prd-x.md` — the same lane split,
-  // surviving in one input shape. Confirming the PRD exists turns both into a loud exit 4.
-  it('spawns nothing for a .md path that is not on disk', async () => {
-    const { ctx, posts } = routedCtx({ '/api/prd': { body: { found: false } } })
-    await expect(cmdRunStart(ctx, 'build', 'tasks/typo.md', {})).rejects.toMatchObject({
-      code: EXIT.NOT_FOUND,
-    })
-    expect(posts).toHaveLength(0)
-  })
-
-  it('adopts the path the STUDIO reports, so a subdirectory cwd cannot fork the lane', async () => {
-    // cwd is /repo/sub, but the studio answers with the canonical /repo/tasks/prd-x.md.
-    const { ctx, posts } = routedCtx(
-      {
-        '/api/prd': { body: { found: true, path: '/repo/tasks/prd-x.md' } },
-        '/api/run': { status: 201, body: { runId: 'r1' } },
-      },
-      '/repo/sub',
-    )
-    expect(await cmdRunStart(ctx, 'build', 'tasks/prd-x.md', {})).toBe(EXIT.OK)
-    expect((posts[0].body as { meta: { laneKey: string } }).meta.laneKey).toBe('/repo/tasks/prd-x.md')
+  it('preserves NOT_FOUND for a syntactically valid but missing path', async () => {
+    const { ctx, posts } = routedCtx({ '/api/workflow': { status: 404, body: { error: 'target path is missing' } } })
+    await expect(cmdRunStart(ctx, 'build', 'tasks/missing.md', {})).rejects.toMatchObject({ code: EXIT.NOT_FOUND })
+    expect(posts).toHaveLength(1)
   })
 })
 
@@ -294,11 +255,11 @@ describe('cmdRunStart — chain verbs', () => {
 })
 
 describe('cmdRunStart', () => {
-  it('posts the prompt and cwd, and prints the run id', async () => {
+  it('posts the workflow target and prints the workflow id', async () => {
     const { ctx, out, bodies } = ctxFor({ body: { runId: 'r1' } }, true)
     expect(await cmdRunStart(ctx, 'build', 'tasks/prd-x.md', {})).toBe(EXIT.OK)
-    expect(bodies[0]).toMatchObject({ prompt: '/saki-builder:build /repo/tasks/prd-x.md', cwd: '/repo' })
-    expect(JSON.parse(out[0])).toEqual({ runId: 'r1', deduped: false })
+    expect(bodies[0]).toMatchObject({ target: 'tasks/prd-x.md', cwd: '/repo' })
+    expect(JSON.parse(out[0])).toMatchObject({ workflowId: 'r1', deduped: false })
   })
 
   // REGRESSION (fresh-context review, BLOCKER): laneKey was the raw CLI argument. The studio's
@@ -307,25 +268,22 @@ describe('cmdRunStart', () => {
   // (runManager.ts:659), so a relative path never matched the UI's absolute one and the CLI would
   // spawn a SECOND concurrent /build on a branch the studio was already building. The old stub
   // test passed because it only compared the CLI against itself.
-  it('sends an ABSOLUTE PRD path as laneKey — the key the UI and server dedupe on', async () => {
+  it('sends the path unchanged; the backend owns canonical lane resolution', async () => {
     const { ctx, bodies } = ctxFor({ body: { runId: 'r1' } })
     await cmdRunStart(ctx, 'build', 'tasks/prd-x.md', {})
-    expect((bodies[0] as { meta?: { laneKey?: string } }).meta).toEqual({
-      kind: 'build',
-      laneKey: '/repo/tasks/prd-x.md',
-    })
+    expect(bodies[0]).toMatchObject({ target: 'tasks/prd-x.md', cwd: '/repo' })
   })
 
-  it('puts that same absolute path in the prompt, as the UI does', async () => {
+  it('does not turn the path into a child prompt', async () => {
     const { ctx, bodies } = ctxFor({ body: { runId: 'r1' } })
     await cmdRunStart(ctx, 'build', 'tasks/prd-x.md', {})
-    expect((bodies[0] as { prompt: string }).prompt).toBe('/saki-builder:build /repo/tasks/prd-x.md')
+    expect((bodies[0] as Record<string, unknown>).prompt).toBeUndefined()
   })
 
-  it('an absolute argument is passed through unchanged', async () => {
+  it('accepts an absolute path inside cwd', async () => {
     const { ctx, bodies } = ctxFor({ body: { runId: 'r1' } })
-    await cmdRunStart(ctx, 'build', '/elsewhere/tasks/prd-y.md', {})
-    expect((bodies[0] as { meta?: { laneKey?: string } }).meta?.laneKey).toBe('/elsewhere/tasks/prd-y.md')
+    await cmdRunStart(ctx, 'build', '/repo/tasks/prd-y.md', {})
+    expect((bodies[0] as { target: string }).target).toBe('/repo/tasks/prd-y.md')
   })
 
   it('sends NO meta for non-build verbs — dedupe is a build-lane concept', async () => {
@@ -337,14 +295,13 @@ describe('cmdRunStart', () => {
   })
 
   it('reports a deduped in-flight build as success, not as a new run', async () => {
-    // index.ts:1260 answers HTTP 200 {runId, deduped:true} when a build for the lane is live.
-    const { ctx, out } = ctxFor({ status: 200, body: { runId: 'existing', deduped: true } }, true)
+    const { ctx, out } = ctxFor({ status: 200, body: { workflowId: 'existing', phase: 'build', status: 'running', deduped: true } }, true)
     expect(await cmdRunStart(ctx, 'build', 'tasks/prd-x.md', {})).toBe(EXIT.OK)
-    expect(JSON.parse(out[0])).toEqual({ runId: 'existing', deduped: true })
+    expect(JSON.parse(out[0])).toMatchObject({ workflowId: 'existing', deduped: true })
   })
 
   it('mentions the dedupe in human output so a repeat is not mistaken for a new build', async () => {
-    const { ctx, out } = ctxFor({ status: 200, body: { runId: 'existing', deduped: true } })
+    const { ctx, out } = ctxFor({ status: 200, body: { workflowId: 'existing', phase: 'build', status: 'running', deduped: true } })
     await cmdRunStart(ctx, 'build', 'tasks/prd-x.md', {})
     expect(out[0]).toContain('already running')
   })
@@ -360,7 +317,7 @@ describe('cmdRunStart', () => {
     await expect(cmdRunStart(ctx, 'build', '', {})).rejects.toMatchObject({ code: EXIT.USAGE })
   })
 
-  it('follows the run to completion and adopts its exit code when --follow is set', async () => {
+  it('follows the workflow to completion and adopts its exit code when --follow is set', async () => {
     const enc = (s: string) => s
     const frames = [
       enc(`data: ${JSON.stringify({ seq: 1, ts: 0, line: { kind: 'raw', text: 'working' } })}\n\n`),
@@ -369,19 +326,11 @@ describe('cmdRunStart', () => {
     // Route by URL, not call order — a build now reads /api/prd first, so counting calls broke.
     const impl = (async (url: string | URL) => {
       const u = String(url)
-      if (u.includes('/api/prd')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ found: true, path: '/repo/tasks/p.md' }),
-          text: async () => '',
-        } as unknown as Response
-      }
-      if (u.includes('/api/run')) {
+      if (u.includes('/api/workflow')) {
         return {
           ok: true,
           status: 201,
-          json: async () => ({ runId: 'r1' }),
+          json: async () => ({ workflowId: 'w1', phase: 'build', status: 'running', deduped: false }),
           text: async () => '',
         } as unknown as Response
       }

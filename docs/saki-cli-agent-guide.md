@@ -291,11 +291,11 @@ those work from anywhere.
 
 | Code | Name | Meaning | What an agent should do |
 |---|---|---|---|
-| `0` | OK | Succeeded. For `run tail`: the run finished `done` | continue |
+| `0` | OK | Succeeded. For workflow `--follow`: durable verification finished `done` | continue |
 | `1` | ERROR | Unexpected failure, **or** a run that ended `error` (incl. stopped) | read stderr; do not retry blindly |
 | `2` | USAGE | Bad arguments — unknown command/flag, missing or extra positional | fix the command; retrying identically will fail again |
 | `3` | UNREACHABLE | Studio not answering | start the studio, then retry |
-| `4` | NOT_FOUND | Unknown run, no roadmap, item has no PRD, PRD not on disk | check the id/path; do not retry |
+| `4` | NOT_FOUND | Unknown run/workflow or target not found | check the id/path; do not retry |
 | `5` | REMOTE_FAILED | Studio reached, operation refused (git/glab stderr in the message) | read stderr; usually a dirty tree or missing remote |
 | `6` | AUTH_REQUIRED | Studio gated the route (401/403) | almost always `DEV_MODE` off — see §1.3 |
 
@@ -322,7 +322,7 @@ Add `--json` to any read command for one compact machine-readable line.
 
 | Flag | Meaning |
 |---|---|
-| `--follow` | block until the run settles and adopt **the run's own** exit code (so `&&` chaining works) |
+| `--follow` | for `build`, block until the workflow is verified; for direct runs, adopt the child verdict |
 | `--engine claude\|opencode\|codex` | which agent runtime executes the run. Default `claude`. See §1.5 |
 | `--profile <dir>` | pin that run's engine config dir. Default = the engine's own default profile |
 
@@ -344,7 +344,8 @@ saki status                                        is the studio up, and will it
 saki roadmap list                                  work items in this repo
 saki roadmap add "<intent>" --epic|--feature|--improvement|--bug
 saki run <build|pickup|proto|rplan> <id|path> [--follow] [--engine <e>] [--profile <dir>]
-saki run tail <runId>                              stream a run, exit with its verdict
+saki run continue <workflowId> [--option <value>]  resume a parked/awaiting workflow
+saki run tail <runId>                              stream one deliberate child run
 saki run stop <runId>                              stop a running run
 saki runs                                          runs the studio still holds
 saki prd show <id|path>                            print a PRD
@@ -436,7 +437,7 @@ instead of stopping. Use it only when nobody is watching — it is what `build` 
 | 1 | `saki pickup E22 --follow` | writes the PRD and loops prd ↔ prd-review until green | stops ready for proto |
 | 2 | `saki run proto E22 --follow` | renders the UI preview gallery | **also LOCKS the PRD** — the freeze before build |
 | 3 | `saki proto E22` | prints the gallery URL to look at it | instant; no run |
-| 4 | `saki build E22 --follow` | implements every slice, running the whole chain per slice | needs a locked PRD |
+| 4 | `saki build E22 --follow` | drives the workflow and verifies every slice | resolves/picks up and locks as needed |
 
 `saki prd-review --follow` is available standalone for re-reviewing a PRD you edited by hand;
 `pickup` already runs it internally.
@@ -466,16 +467,14 @@ saki status --json | jq -e '.reachable and .backendReachable and .devMode and .c
 ### 5.2 Ship a PRD-track item that already has a PRD
 
 ```bash
-saki prd show E22                     # confirm it's the right PRD
-saki prd lock E22                     # freeze requirements (idempotent — already-locked is exit 0)
-saki build E22 --follow               # blocks; exits with the RUN's verdict
+saki build E22 --follow               # drives pickup/proto/lock/build and verifies completion
 saki mr create                        # only on success
 ```
 
 Chained:
 
 ```bash
-saki prd lock E22 && saki build E22 --follow && saki mr create
+saki build E22 --follow && saki mr create
 ```
 
 ### 5.3 Take an item from nothing to built
@@ -521,21 +520,21 @@ saki roadmap list --json \
 
 ## 6. Idempotency — safe to retry
 
-`saki run build` is **de-duplicated by the studio**. Re-running it for the same PRD returns the
+`saki run build` is **de-duplicated by the backend workflow**. Re-running it for the same item returns the
 in-flight run instead of starting a second build:
 
 ```console
 $ saki run build E22 --json
-{"runId":"9f3c1a2e-…","deduped":false}
+{"workflowId":"9f3c1a2e-…","phase":"build","status":"running","deduped":false}
 
 $ saki run build E22 --json        # retry
-{"runId":"9f3c1a2e-…","deduped":true}     # same run, nothing new spawned
+{"workflowId":"9f3c1a2e-…","phase":"build","status":"running","deduped":true}     # same workflow, no new child
 ```
 
 An agent may retry `run build` freely. `deduped:true` means "already running" — **not** an error.
 
-The lane key is the **absolute PRD path**, shared with the web UI, so a build started in the UI and
-a `saki run build` for the same PRD are one run, not two.
+The lane key is a canonical **repo + roadmap-item identity**, so an id and its Child PRD path—and a
+build started by another local caller—are one workflow, not two.
 
 Other verbs (`pickup`, `proto`, `rplan`) are **not** de-duplicated — repeating them starts another
 run. Check `saki runs` first.
@@ -598,6 +597,7 @@ saki branch
 
 # act
 saki run build  <id> --follow      # && chains on success
+saki run continue <workflowId> [--option <value>] # explicit parked/decision recovery
 saki run pickup <id> --follow
 saki run proto  <id> --follow
 saki run rplan  <id> --follow

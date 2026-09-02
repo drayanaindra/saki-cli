@@ -75,7 +75,7 @@ saki backend stop     # SIGTERM, falls back to SIGKILL after 5s; also stops a se
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SAKI_BACKEND_URL` | `http://127.0.0.1:8788` | Go backend base URL — serves runs, roadmap, prd, branch, MRs, proto, screenshots, doctor, init-env |
+| `SAKI_BACKEND_URL` | `http://127.0.0.1:8788` | Go backend base URL — serves workflows, runs, roadmap, prd, branch, MRs, proto, screenshots, doctor, init-env |
 | `SAKI_BACKEND_BIN` | *(adjacent `saki-backend`, else `PATH`)* | Override which binary `saki backend start` / autostart spawns |
 | `SAKI_DAEMON_STATE_DIR` | `$TMPDIR/saki-<uid>` | Where the daemon's PID/socket state file lives |
 | `SAKI_STUDIO_URL` | *(unset — no Express)* | **Opt-in.** A second, separately-run Express server for a pipeline-studio deployment that layers a UI/session model over this backend. Adds `saki artifacts` plus the `devMode`/`auth` lines in `saki status`. Setting it also disables backend auto-start (see below) — you're expected to run both servers yourself. |
@@ -136,16 +136,17 @@ status is *not* a reliable success signal. The exit code is.
 
 | Code | Name | Meaning |
 |---|---|---|
-| 0 | `OK` | Succeeded. For `run tail`/`--follow`, the run ended `done` |
+| 0 | `OK` | Succeeded. For workflow `--follow`, durable verification ended `done` |
 | 1 | `ERROR` | Unexpected failure — also: a run that ended `error` (incl. stopped), an unprovisioned engine refused at spawn |
 | 2 | `USAGE` | Bad arguments: unknown command/flag, missing or extra positional |
 | 3 | `UNREACHABLE` | A configured server is not answering, or the daemon could not be started. For `status`, the Go backend `:8788` — plus Express `:8787` when `SAKI_STUDIO_URL` is set. Also `saki artifacts` with no Express configured |
-| 4 | `NOT_FOUND` | Unknown run, no roadmap, item has no PRD, PRD not on disk |
+| 4 | `NOT_FOUND` | Unknown run/workflow, or target is not found |
 | 5 | `REMOTE_FAILED` | Backend reached, operation refused (`{ok:false}` — git/glab stderr) |
 | 6 | `AUTH_REQUIRED` | Studio gated the route (401/403) — only reachable with `SAKI_STUDIO_URL` set and no `DEV_MODE=1`; also artifacts |
 
-Run status vocabulary is the server's: **`running` / `done` / `error`**. `done` is the only success
-value — a stopped run ends `error` with a null exit code.
+Run status vocabulary is **`running` / `done` / `error`**. Workflow status additionally includes
+**`parked`**, **`awaiting-decision`**, **`failed`**, and **`stopped`**. A workflow `done` is the only
+success value, and it is published only after durable artifact/commit/gate verification.
 
 Errors and hints go to **stderr**; results go to **stdout**, so `2>/dev/null` leaves clean data.
 
@@ -172,10 +173,11 @@ saki rplan  <roadmap-id|plan-path>             [--follow] [--engine <e>]       #
 saki prd-review | rplan-review | approved | qa | reviewer | wrap [--follow] [--engine <e>]  # aliases too
 
 saki run build  <roadmap-id|prd-path> [--follow] [--engine <e>] [--profile <dir>]
+saki run continue <workflowId> [--option <value>]       # resume parked/awaiting workflow
 saki run pickup <roadmap-id>
 saki run proto  <roadmap-id|prd-path>
 saki run rplan  <roadmap-id|plan-path>
-saki run tail <runId>                        # stream; exits with the RUN's verdict
+saki run tail <runId>                        # stream a deliberate child; exits with its verdict
 saki run stop <runId>
 saki runs                                    # runs the backend still holds
 
@@ -357,20 +359,25 @@ saki run build tasks/prd-checkout.md --follow && echo "build green"
 saki mr create
 ```
 
-`--follow` blocks until the run settles and adopts the run's own exit code, so `&&` chaining works.
+`--follow` follows the workflow, not one child turn. It exits 0 only after verified completion; a
+parked, awaiting, failed, stopped, or dropped workflow stream is non-zero.
 
-### Build runs are de-duplicated
+`saki build <id> --follow` starts (or re-adopts) `POST /api/workflow`. PRD-track work runs
+`resolve → pickup (when needed) → proto → lock → build → verify`; Plan-track work runs
+`resolve → rplan → rplan-review → approved → qa → reviewer → wrap → verify`. Child turns and
+usage-limit waits remain internal transitions. Use `saki run continue <workflowId>` for an explicit
+parked recovery, or `--option` for a recorded decision; options are validated by the backend.
 
-`saki run build <arg>` resolves `<arg>` (a roadmap id **or** a path) to the **absolute PRD path** and
-sends `meta = {kind:'build', laneKey:<that absolute path>}` — the same key a UI layered on top would
-send, and the one the backend dedupes on. Two callers agreeing on that key means a build started
-elsewhere and a `saki run build` for the same PRD share one lane rather than running twice:
+### Workflows are de-duplicated
+
+`saki run build <arg>` sends the roadmap id/path to the backend. The backend resolves it to a stable
+repo/item lane, so an id and its Child PRD path share one workflow rather than running twice:
 
 ```console
 $ saki run build tasks/prd-x.md --json
-{"runId":"09e16cc4-…","deduped":false}
+{"workflowId":"09e16cc4-…","phase":"build","status":"running","deduped":false}
 $ saki run build tasks/prd-x.md --json      # retry
-{"runId":"09e16cc4-…","deduped":true}       # same run, nothing new spawned
+{"workflowId":"09e16cc4-…","phase":"build","status":"running","deduped":true}       # same workflow
 ```
 
 ## Known limitations

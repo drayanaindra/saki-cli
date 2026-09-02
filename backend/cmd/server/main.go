@@ -109,6 +109,11 @@ func main() {
 	planTrackSvc := usecase.NewPlanTrackService(contentFS, contentFS)       // F4 slice 6: plan-track roadmap writes
 	doctorSvc := usecase.NewDoctorService(infra.EngineProofChecker{})       // F2 slice 1: engine provisioning verdict
 	initEnvSvc := usecase.NewInitEnvService(infra.EngineProvisioner{}, infra.EngineProofChecker{})
+	workflowJournal := infra.NewFileWorkflowJournal(filepath.Join(infra.GoRunsDir(), "workflows"))
+	workflowSvc := usecase.NewWorkflowService(workflowJournal, store, usecase.WorkflowChildAdapter{Runs: &runSvc, Builds: engineSvc}, usecase.WorkflowChildAdapter{Runs: &runSvc, Builds: engineSvc, Stops: &stopSvc}, contentFS, infra.GitCommitVerifier{}, lockSvc, fileOutput, realClock{}, infra.UUIDGen{})
+	if err := workflowSvc.Rehydrate(); err != nil {
+		log.Printf("rehydrate workflows: %v", err)
+	}
 
 	// F6 slice 1: the NEW periodic sweep — fires due auto-resumes (the restart-safe backstop for the
 	// in-memory timers). Go has no recurring all-runs poll otherwise; slice 3 adds the stall watchdog here.
@@ -117,10 +122,12 @@ func main() {
 		defer t.Stop()
 		for range t.C {
 			engineSvc.Sweep()
+			workflowSvc.Sweep()
 		}
 	}()
 
 	h := adapter.NewHandler(branchSvc, runSvc, engineSvc, listSvc, streamSvc, stopSvc, proxy, gitWriteSvc, roadmapSvc, workitemsSvc, prdSvc, lockSvc, blockersSvc, sliceMetaSvc, resolveSvc, planTrackSvc, doctorSvc, initEnvSvc)
+	h.SetWorkflow(workflowSvc)
 	mux := h.Routes()
 	// F5 · P4 slice 1: proto asset serve (GET /api/proto/{dir}/{rest...}) — mounted as a sub-handler onto
 	// the same mux (avoids a 16th NewHandler arg), OriginGuard-wrapped, reusing the read-only content FS.

@@ -1,0 +1,16 @@
+{
+  "epic": "F7",
+  "slug": "hands-off-build-workflow-pickup-multi-turn-completion-and-continuation",
+  "title": "Hands-off build workflow — pickup, multi-turn completion, and continuation",
+  "prd": "tasks/prd-hands-off-build-workflow-pickup-multi-turn-completion-and-continuation.md",
+  "phase": "complete",
+  "started_at": 1788350400,
+  "prd_written": true,
+  "review": {
+    "rounds": 1,
+    "verdict": "SHIP",
+    "readiness": "READY",
+    "phase1": "PASSED",
+    "blockers_fixed": 4
+  }
+}

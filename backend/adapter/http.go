@@ -51,7 +51,10 @@ type Handler struct {
 	planTrack usecase.PlanTrackService
 	doctor    usecase.DoctorService // F2 slice 1: engine provisioning verdict
 	initEnv   usecase.InitEnvService
+	workflow  *usecase.WorkflowService
 }
+
+func (h *Handler) SetWorkflow(workflow *usecase.WorkflowService) { h.workflow = workflow }
 
 // NewHandler wires the usecase services into the HTTP handler.
 // initEnv is a REQUIRED parameter, not a variadic. `Routes` registers POST /api/init-env
@@ -78,7 +81,13 @@ func (h Handler) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/runs", h.getRuns)           // union of Go + apps/server runs
 	mux.HandleFunc("POST /api/runs", h.forwardRuns)      // hosted route (apps/server) — forward verbatim
 	mux.HandleFunc("POST /api/run/{id}/stop", h.stopRun) // stop Go-owned; passthrough un-owned
-	mux.HandleFunc("GET /events/{id}", h.events)         // SSE: tail Go-owned; passthrough un-owned
+	// Workflow and child output are local process state. Guard the stream as well as the mutating
+	// workflow endpoints so a browser on another origin cannot read run transcripts or workflow
+	// decisions through a loopback DNS-rebind/CSRF request.
+	mux.Handle("GET /events/{id}", OriginGuard(http.HandlerFunc(h.events))) // SSE: tail Go-owned; passthrough un-owned
+	mux.Handle("POST /api/workflow", OriginGuard(http.HandlerFunc(h.postWorkflow)))
+	mux.Handle("POST /api/workflow/{id}/continue", OriginGuard(http.HandlerFunc(h.continueWorkflow)))
+	mux.Handle("POST /api/workflow/{id}/stop", OriginGuard(http.HandlerFunc(h.stopWorkflow)))
 	// F3 · P2 slice 1: git-write bucket (branch list + switch), behind the loopback OriginGuard
 	// (BR7) — mounted per-route so the run-vertical routes above are unaffected.
 	mux.Handle("GET /api/branches", OriginGuard(http.HandlerFunc(h.branchesHandler)))
@@ -417,6 +426,12 @@ func (h Handler) stopRun(w http.ResponseWriter, r *http.Request) {
 // run) is passthrough-proxied to apps/server, so StreamPanel works for builds during coexistence.
 func (h Handler) events(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if h.workflow != nil {
+		if _, ok := h.workflow.Get(id); ok {
+			h.workflowEvents(w, r, id)
+			return
+		}
+	}
 	if _, ok := h.runs.Owned(id); !ok {
 		h.proxy.StreamEvents(r.Context(), id, r.Header.Get("Cookie"), w)
 		return
@@ -438,6 +453,129 @@ func (h Handler) events(w http.ResponseWriter, r *http.Request) {
 		_ = rc.Flush()
 	}
 	h.stream.Stream(r.Context(), id, emit, end)
+}
+
+func (h Handler) postWorkflow(w http.ResponseWriter, r *http.Request) {
+	if h.workflow == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "workflow service unavailable"})
+		return
+	}
+	var req struct {
+		Cwd            string           `json:"cwd"`
+		Target         string           `json:"target"`
+		ConfigDir      string           `json:"configDir"`
+		Engine         domain.RunEngine `json:"engine"`
+		IdempotencyKey string           `json:"idempotencyKey"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "invalid request body"})
+		return
+	}
+	engine, err := parseRunEngine(req.Engine)
+	if err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		return
+	}
+	var config *string
+	if req.ConfigDir != "" {
+		config = &req.ConfigDir
+	}
+	result, err := h.workflow.Start(usecase.WorkflowStartRequest{Cwd: req.Cwd, Target: req.Target, ConfigDir: config, Engine: engine, IdempotencyKey: req.IdempotencyKey})
+	if err != nil {
+		writeWorkflowError(w, err)
+		return
+	}
+	writeJSON(w, mapStatus(result.Deduped), workflowBody(result))
+}
+
+func (h Handler) continueWorkflow(w http.ResponseWriter, r *http.Request) {
+	if h.workflow == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "workflow service unavailable"})
+		return
+	}
+	var req struct {
+		Option string `json:"option"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&req); err != nil && err != io.EOF {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "invalid request body"})
+		return
+	}
+	result, err := h.workflow.Continue(r.PathValue("id"), req.Option)
+	if err != nil {
+		writeWorkflowError(w, err)
+		return
+	}
+	writeJSON(w, mapStatus(result.Deduped), workflowBody(result))
+}
+
+func (h Handler) stopWorkflow(w http.ResponseWriter, r *http.Request) {
+	if h.workflow == nil || !h.workflow.Stop(r.PathValue("id")) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no running workflow with that id"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stopped": true, "workflowId": r.PathValue("id")})
+}
+
+func mapStatus(deduped bool) int {
+	if deduped {
+		return http.StatusOK
+	}
+	return http.StatusCreated
+}
+
+func workflowBody(result usecase.WorkflowStartResult) map[string]any {
+	w := result.Workflow
+	body := map[string]any{"workflowId": w.ID, "status": w.Status, "phase": w.Phase, "deduped": result.Deduped, "workflow": w}
+	if w.ChildRunID != "" {
+		body["childRunId"] = w.ChildRunID
+	}
+	if w.Reason != "" {
+		body["reason"] = w.Reason
+	}
+	if w.ParkedReason != "" {
+		body["parkedReason"] = w.ParkedReason
+	}
+	if w.AwaitingDecision != nil {
+		body["awaitingDecision"] = w.AwaitingDecision
+	}
+	if w.CompletionEvidence != nil {
+		body["completionEvidence"] = w.CompletionEvidence
+	}
+	return body
+}
+
+func writeWorkflowError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, usecase.ErrWorkflowNotFound) || errors.Is(err, usecase.ErrWorkflowTargetNotFound) {
+		status = http.StatusNotFound
+	} else if errors.Is(err, usecase.ErrWorkflowTarget) || errors.Is(err, usecase.ErrWorkflowTerminal) || errors.Is(err, usecase.ErrWorkflowOption) {
+		status = http.StatusUnprocessableEntity
+	}
+	writeJSON(w, status, map[string]any{"error": err.Error()})
+}
+
+func (h Handler) workflowEvents(w http.ResponseWriter, r *http.Request, id string) {
+	w.Header().Set(hdrContentType, "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	rc := http.NewResponseController(w)
+	_ = rc.Flush()
+	emit := func(ev usecase.WorkflowEvent) {
+		b, _ := json.Marshal(ev)
+		fmt.Fprintf(w, "data: %s\n\n", b)
+		_ = rc.Flush()
+	}
+	end := func(workflow domain.Workflow) {
+		code := any(nil)
+		if workflow.Status == domain.WorkflowDone {
+			code = 0
+		}
+		b, _ := json.Marshal(map[string]any{"status": workflow.Status, "workflowId": workflow.ID, "phase": workflow.Phase, "reason": workflow.Reason, "parkedReason": workflow.ParkedReason, "awaitingDecision": workflow.AwaitingDecision, "exitCode": code, "completionEvidence": workflow.CompletionEvidence})
+		fmt.Fprintf(w, "event: end\ndata: %s\n\n", b)
+		_ = rc.Flush()
+	}
+	h.workflow.Stream(r.Context(), id, emit, end)
 }
 
 // serviceName identifies THIS server in a health response. Deliberately distinct from apps/server's

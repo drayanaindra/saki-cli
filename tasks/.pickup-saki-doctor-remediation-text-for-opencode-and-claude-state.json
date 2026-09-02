@@ -1,0 +1,10 @@
+{
+  "epic": "F5",
+  "slug": "saki-doctor-remediation-text-for-opencode-and-claude",
+  "title": "`saki doctor` — remediation text for opencode and claude",
+  "prd": "tasks/prd-saki-doctor-remediation-text-for-opencode-and-claude.md",
+  "phase": "complete",
+  "started_at": 1787587370,
+  "prd_written": true,
+  "review": { "rounds": 1, "verdict": "SHIP", "readiness": "READY", "phase1": "PASSED", "blockers_fixed": 3 }
+}

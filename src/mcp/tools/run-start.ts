@@ -21,7 +21,7 @@ export function registerRunStartTool(server: McpServer, makeToolCtx: ToolCtxFact
     {
       title: 'saki run start',
       description:
-        'start a headless saki-builder skill run (build/pickup/proto/rplan/...); returns immediately with a runId — call saki_run_tail separately to block for its result',
+        'start a headless saki-builder step or build workflow; returns immediately with a runId or workflowId — use the CLI workflow follow/continue contract for hands-off builds',
       inputSchema: {
         // `verb`/`engine` are z.string(), not z.enum(RUN_VERBS)/z.enum(RUN_ENGINES): an SDK enum
         // rejects a bad value at the PROTOCOL layer (a non-isError shape), which would fail criterion

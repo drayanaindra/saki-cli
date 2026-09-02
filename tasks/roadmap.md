@@ -31,9 +31,9 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 **Phase chain:** F2 (MVP) → F4 [trigger: F2 shipped and a claude-profile provisioning failure is reported]
 
 ### F5 · `saki doctor` — remediation text for opencode and claude
-**Type:** Feature · **Track:** PRD · **Status:** Planned · **Owner:** unassigned · **Updated:** 2026-08-15
+**Type:** Feature · **Track:** PRD · **Status:** Shipped · **Owner:** unassigned · **Updated:** 2026-09-02
 **Goal:** Every `failed` verdict carries a runnable fix, not just codex's. Deferred from F2: only codex has remediation text today (`backend/infra/codex.go:72-74`); opencode's error carries none (`backend/infra/opencode.go:58`) and claude has no proof yet, so authoring both is its own item.
-**Child PRD:** —
+**Child PRD:** prd-saki-doctor-remediation-text-for-opencode-and-claude.md
 **Phase chain:** F2 (MVP) → F5 [trigger: F2 shipped and an opencode `failed` verdict is seen without a fix]
 
 ### F6 · `saki init-env` — provision an engine profile
@@ -65,3 +65,10 @@ not aspirational scope. Add more with `/saki-builder:add "<intent>"`.
 **What:** Ship a Homebrew formula (`brew install drayanaindra/tap/saki` — no GitHub org named `saketek` exists, that's an npm-only scope) that installs the backend binary as a service, generating both the launchd `LaunchAgent` (macOS) and the systemd user unit (Linux) from one Homebrew `service do` block, so `saki-backend` can run persistently (`brew services start saki`) instead of only the lazy per-command auto-start (F1's daemon lifecycle).
 **Repro / Context:** Today `saki-backend` only ever runs via `ensureDaemon()` (`src/daemon.ts:168`), spawned lazily by a `saki` CLI invocation and left running until the machine reboots or `saki backend stop` — nothing outside a `saki` command can rely on it being up. A persistent service matters if something other than the `saki` CLI needs to reach the backend independently (e.g. hitting `/api/*` directly without ever running `saki` first). Distribution-wise this is a second channel alongside npm (I1) — needs a Homebrew tap repo, the formula itself, and platform-specific service definitions (launchd plist, systemd unit) that must not conflict with the existing lazy-daemon's state file / port ownership (`src/daemon.ts` `daemonStatePath`, `DEFAULT_GO_URL`).
 **Child plan:** tasks/i4-homebrew-service-plan.md
+
+### F7 · Hands-off build workflow — pickup, multi-turn completion, and continuation
+**Type:** Feature · **Track:** PRD · **Status:** Shipped · **Owner:** unassigned · **Updated:** 2026-09-02
+**Goal:** Make `saki build <roadmap-id> --follow` a complete, resumable workflow: create the PRD when needed, run the required preparation/build phases, continue across multiple agent turns, and return success only after the repository's goals are verified as achieved.
+**Scope:** Backend-owned workflow state for `pickup → proto/lock → build` (and Plan-track parity), whole-workflow `--follow`, durable workflow/lane deduplication during retry waits, verified completion evidence instead of sentinel-only completion, and explicit `continue`/decision handling for parked or awaiting runs.
+**Success signal:** A single `saki build <id> --follow` either reaches a durable verified-success state or returns a durable actionable failure; it never exits successfully while a successor turn or workflow phase is still pending.
+**Child PRD:** prd-hands-off-build-workflow-pickup-multi-turn-completion-and-continuation.md

@@ -88,7 +88,7 @@ Then, from any repo that has a `tasks/roadmap.md`:
 
 ```bash
 saki roadmap list
-saki build <roadmap-id|prd-path> --follow    # exits with the RUN's verdict
+saki build <roadmap-id|prd-path> --follow    # follows the workflow; 0 only after verification
 ```
 
 ## Built for agents

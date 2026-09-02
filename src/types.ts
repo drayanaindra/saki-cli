@@ -98,6 +98,72 @@ export interface WorkItemsResult {
   plans: Array<Record<string, unknown>>
 }
 
+export type WorkflowStatus = 'running' | 'parked' | 'awaiting-decision' | 'done' | 'failed' | 'stopped'
+export type WorkflowPhase =
+  | 'resolve'
+  | 'pickup'
+  | 'proto'
+  | 'lock'
+  | 'build'
+  | 'verify'
+  | 'rplan'
+  | 'rplan-review'
+  | 'approved'
+  | 'qa'
+  | 'reviewer'
+  | 'wrap'
+
+export interface WorkflowDecision {
+  kind: string
+  question: string
+  options: string[]
+  slice?: number
+}
+
+export interface WorkflowEvidence {
+  checkedPaths: string[]
+  commitIds: string[]
+  phaseVerdicts: Record<string, string>
+  verifiedAt: number
+}
+
+export interface Workflow {
+  workflowId: string
+  laneKey: string
+  cwd: string
+  target: string
+  resolvedPath?: string
+  engine?: string
+  configDir?: string
+  phase: WorkflowPhase
+  childRunId?: string
+  phaseHistory: Array<Record<string, unknown>>
+  status: WorkflowStatus
+  reason?: string
+  parkedReason?: string
+  awaitingDecision?: WorkflowDecision
+  completionEvidence?: WorkflowEvidence
+}
+
+export interface WorkflowStartResult {
+  workflowId: string
+  childRunId?: string
+  deduped: boolean
+  phase: WorkflowPhase
+  status: WorkflowStatus
+  reason?: string
+  workflow?: Workflow
+}
+
+export interface WorkflowEnd {
+  status: WorkflowStatus | 'unknown'
+  workflowId?: string
+  phase?: WorkflowPhase
+  reason?: string
+  exitCode?: number | null
+  completionEvidence?: WorkflowEvidence
+}
+
 // backend/domain/doctor.go's EngineReport, mirrored field-for-field. status is a closed union so a
 // misspelled comparison is a compile error, not a silent false — same discipline as RunStatus above.
 // All five fields are always present (never omitted): reason/fix are "" when there is nothing to report.

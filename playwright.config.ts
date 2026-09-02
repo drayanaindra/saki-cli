@@ -24,6 +24,7 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:8788',
   },
   webServer: {
+    env: { PORT: '8788' },
     // BOTH artifacts are built first. The Go binary never hot-reloads, so a stale dist/saki-backend
     // would silently serve the previous revision's routes; and the CLI specs execute dist/index.js
     // as a real child process, so a stale bundle would test the previous revision's exit codes.

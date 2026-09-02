@@ -17,6 +17,7 @@ export interface DaemonEnv {
   SAKI_BACKEND_BIN?: string
   SAKI_BACKEND_URL?: string
   SAKI_DAEMON_STATE_DIR?: string
+  SAKI_DAEMON_STATE_PATH?: string
   TMPDIR?: string
 }
 
@@ -30,7 +31,7 @@ export function daemonStateDir(env: DaemonEnv = process.env): string {
 }
 
 export function daemonStatePath(env: DaemonEnv = process.env): string {
-  return join(daemonStateDir(env), STATE_NAME)
+  return env.SAKI_DAEMON_STATE_PATH ?? join(daemonStateDir(env), STATE_NAME)
 }
 
 export async function readDaemonState(env: DaemonEnv = process.env): Promise<DaemonState | null> {
@@ -191,14 +192,19 @@ export async function ensureDaemon(env: DaemonEnv = process.env): Promise<Daemon
   }
 
   try {
-    const child = spawnDaemon(env)
+    const stateEnv = { ...env, SAKI_DAEMON_STATE_PATH: daemonStatePath(env) }
+    const child = spawnDaemon(stateEnv)
     if (!child.pid) throw new CliError('saki-backend did not report a PID', EXIT.UNREACHABLE)
-    await writeState({ pid: child.pid, socketPath: null, goUrl }, env)
+    await writeState({ pid: child.pid, socketPath: null, goUrl }, stateEnv)
     await waitForLiveness(goUrl)
     if (!isAlive(child.pid)) throw new CliError('saki-backend exited before startup completed', EXIT.UNREACHABLE)
-    const state = await readDaemonState(env)
-    if (!state || state.pid !== child.pid) throw new CliError('saki-backend startup was not recorded', EXIT.UNREACHABLE)
-    return state
+    const deadline = Date.now() + DEFAULT_TIMEOUT_MS
+    while (Date.now() < deadline) {
+      const state = await readDaemonState(stateEnv)
+      if (state?.pid === child.pid) return state
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    throw new CliError('saki-backend startup was not recorded', EXIT.UNREACHABLE)
   } catch (err) {
     await removeDaemonState(env)
     throw err

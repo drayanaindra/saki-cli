@@ -97,7 +97,7 @@ func TestBuildRunScript_PromptViaEnvNoInjection(t *testing.T) {
 // (bash read/write the journey needs) auto-approve instead of auto-rejecting on an `ask` profile.
 func TestBuildRunScript_OpencodeCommand(t *testing.T) {
 	s := buildRunScript("build", domain.EngineOpencode, false)
-	if !strings.Contains(s, `opencode run --format json --auto -- "$SAKI_PROMPT"`) {
+	if !strings.Contains(s, `opencode run --print-logs --log-level ERROR --format json --auto -- "$SAKI_PROMPT"`) {
 		t.Fatalf("opencode script must run `opencode run --format json --auto`: %s", s)
 	}
 	if strings.Contains(s, "claude") {
@@ -117,7 +117,7 @@ func TestBuildRunScript_OpencodeCommand(t *testing.T) {
 // invocation form: `--command "$SAKI_CMD"` with the args as the message.
 func TestBuildRunScript_OpencodeUsesCommandFormWhenPromptIsASlashCommand(t *testing.T) {
 	s := buildRunScript("build", domain.EngineOpencode, true)
-	if !strings.Contains(s, `opencode run --format json --auto --command "$SAKI_CMD" -- "$SAKI_PROMPT"`) {
+	if !strings.Contains(s, `opencode run --print-logs --log-level ERROR --format json --auto --command "$SAKI_CMD" -- "$SAKI_PROMPT"`) {
 		t.Fatalf("opencode script must invoke via --command when the prompt carries one: %s", s)
 	}
 	// 🔒 BR3 — neither the command name nor the prompt may be interpolated into the static script.
@@ -261,7 +261,7 @@ func TestSpawn_OpencodeProtoTargetReachesCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Split(strings.TrimRight(string(argv), "\n"), "\n")
-	want := []string{"run", "--format", "json", "--auto", "--command", "proto", "--", "/proto F3"}
+	want := []string{"run", "--print-logs", "--log-level", "ERROR", "--format", "json", "--auto", "--command", "proto", "--", "/proto F3"}
 	if len(got) != len(want) {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}
@@ -297,7 +297,7 @@ func TestSpawn_OpencodeInvokesTheCommandNotTheRawSlashText(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Split(strings.TrimRight(string(argv), "\n"), "\n")
-	want := []string{"run", "--format", "json", "--auto", "--command", "build", "--", "tasks/prd-x.md"}
+	want := []string{"run", "--print-logs", "--log-level", "ERROR", "--format", "json", "--auto", "--command", "build", "--", "tasks/prd-x.md"}
 	if len(got) != len(want) {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}
@@ -342,7 +342,7 @@ func TestSpawn_OpencodeFlagLikeArgsReachTheModelVerbatim(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Split(strings.TrimRight(string(argv), "\n"), "\n")
-	want := []string{"run", "--format", "json", "--auto", "--command", "prd-review", "--", "--review-only"}
+	want := []string{"run", "--print-logs", "--log-level", "ERROR", "--format", "json", "--auto", "--command", "prd-review", "--", "--review-only"}
 	if len(got) != len(want) {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}
@@ -374,7 +374,7 @@ func TestSpawn_OpencodeProsePromptStaysAMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Split(strings.TrimRight(string(argv), "\n"), "\n")
-	want := []string{"run", "--format", "json", "--auto", "--", prose}
+	want := []string{"run", "--print-logs", "--log-level", "ERROR", "--format", "json", "--auto", "--", prose}
 	if len(got) != len(want) {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}

@@ -25,6 +25,8 @@ const GO_ROUTES: RegExp[] = [
   /^\/api\/run($|\?)/,
   /^\/api\/runs($|\?)/,
   /^\/api\/run\/[^/]+\/stop$/,
+  /^\/api\/workflow($|\?)/,
+  /^\/api\/workflow\/[^/]+\/(continue|stop)$/,
   /^\/events\//,
   /^\/api\/branches($|\?)/,
   /^\/api\/switch-branch($|\?)/,

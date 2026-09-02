@@ -218,6 +218,13 @@ func (e *BuildEngineService) reserveAndSpawn(run domain.Run, laneKey string) (do
 // transitioned guard means a build a Stop (or reaper) already ended is never re-classified/re-resumed
 // (BR2); a run whose StopRequested flag is set classifies as user-stop → terminal.
 func (e *BuildEngineService) onExit(id string, code int) {
+	// Finalize and the subsequent retry/park decision are deliberately two store operations. Mark
+	// this short handoff first so WorkflowService cannot observe a terminal child in between them and
+	// mistake a retryable turn for workflow failure.
+	if !e.beginFinalizing(id) {
+		return
+	}
+	defer e.endFinalizing(id)
 	if !e.store.Finalize(id, code) {
 		return // already finalized elsewhere (stop / reaper) — that path owns the terminal decision
 	}
@@ -523,9 +530,9 @@ func (e *BuildEngineService) sweepPendingResumes() {
 //   - rebuild the idempotency map from every build carrying a key (AC 6.4);
 //   - a still-RUNNING build: seed its stall-watchdog activity baseline (else a healthy survived build is
 //     false-SIGTERM'd right after boot), then —
-//       · <id>.exit present (finished while down)  → finalize + route through the engine (resume/push);
-//       · pid still alive                           → RE-ATTACH: watch its real exit, never re-spawn (6.1);
-//       · dead with no exit (interrupted)           → resume as retryable (6.1);
+//     · <id>.exit present (finished while down)  → finalize + route through the engine (resume/push);
+//     · pid still alive                           → RE-ATTACH: watch its real exit, never re-spawn (6.1);
+//     · dead with no exit (interrupted)           → resume as retryable (6.1);
 //   - a non-running build is left to the Sweep (it fires a due pendingResume under the same ConfigDir,
 //     6.2) or left alone (a finalized build is never re-resumed/re-pushed — status-guarded, 6.3).
 func (e *BuildEngineService) RehydrateBuilds(ctx context.Context, reader JournalReader, watch ExitWatcher) {
@@ -574,6 +581,10 @@ func (e *BuildEngineService) RehydrateBuilds(ctx context.Context, reader Journal
 // 6.3), and maybePushOnComplete's durable pushedAt guard means a restart re-finalize never double-pushes
 // (BR4 / 6.3).
 func (e *BuildEngineService) finalizeSurvived(id string, cause domain.RedriveCause, code int) {
+	if !e.beginFinalizing(id) {
+		return
+	}
+	defer e.endFinalizing(id)
 	if !e.store.Finalize(id, code) {
 		return // already finalized (status-guarded)
 	}
@@ -583,6 +594,21 @@ func (e *BuildEngineService) finalizeSurvived(id string, cause domain.RedriveCau
 	}
 	e.rejournal(id)
 	e.finalizeBuild(run, cause)
+}
+
+func (e *BuildEngineService) beginFinalizing(id string) bool {
+	started := false
+	e.store.Update(id, func(r *domain.Run) {
+		if r.Status == domain.StatusRunning {
+			r.Finalizing = true
+			started = true
+		}
+	})
+	return started
+}
+
+func (e *BuildEngineService) endFinalizing(id string) {
+	e.store.Update(id, func(r *domain.Run) { r.Finalizing = false })
 }
 
 // watchSurvivedBuild watches a restart-survived build whose child is STILL ALIVE (owned by the previous
