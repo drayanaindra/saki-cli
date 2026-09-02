@@ -7,6 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-02
+
+### Added
+
+- **F7** — `saki build <roadmap-id> --follow` now drives a durable, restart-safe workflow across
+  pickup, proto/lock, build, QA, review, and verified completion, with workflow deduplication and
+  explicit continuation for parked or awaiting-decision work.
+- Added the agent-facing `.claude/skills/saki-cli/SKILL.md` operating contract.
+
+### Fixed
+
+- **F5** — `saki doctor` and spawn-preflight now provide remediation text for OpenCode and Claude.
+- Hardened daemon startup state-path handling and startup ordering for isolated lifecycle runs.
+
 ## [0.3.1] - 2026-08-26
 
 ### Fixed
@@ -55,7 +69,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **I3** — `saki doctor` / spawn-preflight now verify per-skill coverage, not just plugin presence,
   catching a stale or partial `saki-builder` install before a run instead of after.
 
-[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/drayanaindra/saki-cli/releases/tag/v0.4.0
 [0.3.1]: https://github.com/drayanaindra/saki-cli/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/drayanaindra/saki-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/drayanaindra/saki-cli/compare/v0.1.0...v0.2.0
