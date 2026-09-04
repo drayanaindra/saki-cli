@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import { createRequire } from 'node:module'
 import { main, matchCommand, helpText, isDirectInvocation } from './index.js'
 import { EXIT } from './exit.js'
 
+const packageVersion = createRequire(import.meta.url)('../package.json').version as string
 describe('isDirectInvocation', () => {
   // npm installs the bin as a symlink, so argv[1] is the (often relative) LINK path while
   // import.meta.url is the realpath'd target. Comparing the raw strings makes `saki --help` print
@@ -122,7 +124,7 @@ describe('main', () => {
   it('prints the package version without starting a daemon', async () => {
     const r = run(['--version'])
     expect(await r.code).toBe(EXIT.OK)
-    expect(r.out).toEqual(['0.5.0'])
+    expect(r.out).toEqual([packageVersion])
     expect(r.err).toEqual([])
     expect(r.urls).toEqual([])
   })
