@@ -4,11 +4,23 @@ import { StudioClient } from '../client.js'
 import { makeCtx } from '../ctx.js'
 import { EXIT } from '../exit.js'
 
-function ctxFor(res: { status?: number; body?: unknown; stream?: string[] }, json = false) {
+function ctxFor(
+  res: { status?: number; body?: unknown; stream?: string[] },
+  json = false,
+  doctor?: unknown,
+) {
   const bodies: unknown[] = []
   const impl = (async (url: string | URL, init?: RequestInit) => {
     if (init?.body) bodies.push(JSON.parse(String(init.body)))
     const u = String(url)
+    if (u.includes('/api/doctor')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => doctor,
+        text: async () => JSON.stringify(doctor ?? ''),
+      } as unknown as Response
+    }
     const status = res.status ?? 201
     if (u.includes('/api/workflow')) {
       const body = res.body as Record<string, unknown> | undefined
@@ -126,6 +138,58 @@ describe('cmdRunStart — workflow build contract', () => {
     expect(await cmdRunStart(ctx, 'build', 'E12', {})).toBe(EXIT.OK)
     expect(posts[0].url).toContain('/api/workflow')
     expect(posts[0].body).toMatchObject({ cwd: '/repo', target: 'E12' })
+  })
+  it('resolves --engine auto through doctor before starting a workflow', async () => {
+    const { ctx, posts, gets } = routedCtx({
+      '/api/doctor': {
+        body: {
+          engines: [
+            { engine: 'claude', profile: '/p', status: 'failed', reason: 'missing plugin', fix: 'init' },
+            { engine: 'codex', profile: '/p', status: 'ok', reason: '', fix: '' },
+          ],
+        },
+      },
+      '/api/workflow': { status: 201, body: { workflowId: 'w1', phase: 'build', status: 'running', deduped: false } },
+    })
+
+    expect(await cmdRunStart(ctx, 'build', 'E12', { engine: 'auto', profile: '/p' })).toBe(EXIT.OK)
+    expect(gets[0]).toContain('/api/doctor?profile=%2Fp')
+    expect(posts[0].body).toMatchObject({ engine: 'codex', configDir: '/p' })
+  })
+
+  it('resolves --engine auto for a non-workflow skill run', async () => {
+    const { ctx, posts } = routedCtx({
+      '/api/doctor': {
+        body: {
+          engines: [
+            { engine: 'claude', profile: '/p', status: 'failed', reason: 'missing plugin', fix: 'init' },
+            { engine: 'omp', profile: '/p', status: 'ok', reason: '', fix: '' },
+          ],
+        },
+      },
+      '/api/run': { status: 201, body: { runId: 'r1' } },
+    })
+
+    expect(await cmdRunStart(ctx, 'pickup', 'E12', { engine: 'auto', profile: '/p' })).toBe(EXIT.OK)
+    expect(posts[0].body).toMatchObject({ engine: 'omp', configDir: '/p' })
+  })
+  it('does not post a run when auto finds no usable engine', async () => {
+    const { ctx, posts } = routedCtx({
+      '/api/doctor': {
+        body: {
+          engines: [
+            { engine: 'claude', profile: '/p', status: 'failed', reason: 'missing plugin', fix: 'init' },
+            { engine: 'codex', profile: '/p', status: 'unknown', reason: 'binary not found', fix: 'install' },
+          ],
+        },
+      },
+      '/api/run': { status: 201, body: { runId: 'should-not-start' } },
+    })
+
+    await expect(cmdRunStart(ctx, 'pickup', 'E12', { engine: 'auto', profile: '/p' })).rejects.toMatchObject({
+      code: EXIT.ERROR,
+    })
+    expect(posts).toHaveLength(0)
   })
 
   it('rejects an escaping path before making a request', async () => {

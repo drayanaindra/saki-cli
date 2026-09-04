@@ -5,9 +5,18 @@ import { makeCtx } from '../ctx.js'
 import { EXIT } from '../exit.js'
 import type { RoadmapItem } from '../types.js'
 
-function ctxFor(res: { status?: number; body?: unknown }, json = false) {
+function ctxFor(res: { status?: number; body?: unknown }, json = false, doctor?: unknown) {
   const posts: unknown[] = []
-  const impl = (async (_u: string | URL, init?: RequestInit) => {
+  const impl = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url)
+    if (u.includes('/api/doctor')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => doctor,
+        text: async () => JSON.stringify(doctor ?? ''),
+      } as unknown as Response
+    }
     if (init?.method === 'POST') posts.push(JSON.parse(String(init.body)))
     const status = res.status ?? 200
     return {
@@ -119,10 +128,27 @@ describe('cmdRoadmapInit', () => {
     await expect(cmdRoadmapInit(ctx)).rejects.toMatchObject({ code: EXIT.ERROR })
   })
 
-  it('forwards --profile and --engine as configDir/engine', async () => {
-    const { ctx, posts } = ctxFor({ status: 201, body: { runId: 'r1' } })
-    await cmdRoadmapInit(ctx, { profile: '/prof', engine: 'codex' })
-    expect(posts[0]).toMatchObject({ configDir: '/prof', engine: 'codex' })
+  it('forwards every supported engine and its profile', async () => {
+    for (const engine of ['claude', 'codex', 'opencode', 'omp'] as const) {
+      const { ctx, posts } = ctxFor({ status: 201, body: { runId: 'r1' } })
+      await cmdRoadmapInit(ctx, { profile: `/profiles/${engine}`, engine })
+      expect(posts[0]).toMatchObject({ engine, configDir: `/profiles/${engine}` })
+    }
+  })
+  it('resolves auto before scaffolding the roadmap', async () => {
+    const { ctx, posts } = ctxFor(
+      { status: 201, body: { runId: 'r1' } },
+      false,
+      {
+        engines: [
+          { engine: 'claude', profile: '/p', status: 'failed', reason: 'missing plugin', fix: 'init' },
+          { engine: 'codex', profile: '/p', status: 'ok', reason: '', fix: '' },
+        ],
+      },
+    )
+
+    await expect(cmdRoadmapInit(ctx, { engine: 'auto', profile: '/p' })).resolves.toBe(EXIT.OK)
+    expect(posts[0]).toMatchObject({ engine: 'codex', configDir: '/p' })
   })
 })
 
@@ -159,9 +185,27 @@ describe('cmdRoadmapAdd', () => {
     expect(posts).toHaveLength(0)
   })
 
-  it('forwards --profile and --engine as configDir/engine', async () => {
-    const { ctx, posts } = ctxFor({ status: 201, body: { runId: 'r1' } })
-    await cmdRoadmapAdd(ctx, 'idea', { feature: true }, { profile: '/prof', engine: 'opencode' })
-    expect(posts[0]).toMatchObject({ configDir: '/prof', engine: 'opencode' })
+
+  it('forwards every supported engine and its profile', async () => {
+    for (const engine of ['claude', 'codex', 'opencode', 'omp'] as const) {
+      const { ctx, posts } = ctxFor({ status: 201, body: { runId: 'r1' } })
+      await cmdRoadmapAdd(ctx, 'idea', { feature: true }, { profile: `/profiles/${engine}`, engine })
+      expect(posts[0]).toMatchObject({ engine, configDir: `/profiles/${engine}` })
+    }
+  })
+  it('resolves auto before adding a roadmap item', async () => {
+    const { ctx, posts } = ctxFor(
+      { status: 201, body: { runId: 'r1' } },
+      false,
+      {
+        engines: [
+          { engine: 'claude', profile: '/p', status: 'failed', reason: 'missing plugin', fix: 'init' },
+          { engine: 'omp', profile: '/p', status: 'ok', reason: '', fix: '' },
+        ],
+      },
+    )
+
+    await expect(cmdRoadmapAdd(ctx, 'idea', { feature: true }, { engine: 'auto', profile: '/p' })).resolves.toBe(EXIT.OK)
+    expect(posts[0]).toMatchObject({ engine: 'omp', configDir: '/p' })
   })
 })

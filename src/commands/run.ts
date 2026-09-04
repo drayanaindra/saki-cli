@@ -7,7 +7,7 @@ import { fetchPrd, resolveTargetPrdPath } from './prd.js'
 import { findItem, resolvePlanPath } from '../resolve.js'
 import type { Ctx } from '../ctx.js'
 import type { RoadmapResult, WorkflowStartResult } from '../types.js'
-
+import { resolveEngineSelection } from '../engine-selection.js'
 // The saki-builder skills the CLI can launch headlessly — the full manual chain
 // (rplan → rplan-review → approved → qa → reviewer → wrap) plus the PRD-track entry points
 // (pickup → proto → build) and prd-review. All are non-interactive, which is what makes them
@@ -91,15 +91,25 @@ export function buildRunPrompt(verb: string, arg: string): string {
 // E26 — the agent-runtime vocabulary moved to src/engines.ts (the shared plumbing tier) once
 // `saki init-env` became a second consumer: commands never import each other, so a command cannot be
 // the home of something two commands need. Re-exported here so existing importers are untouched.
-import type { RunEngine } from '../engines.js'
-export { RUN_ENGINES, isRunEngine, assertRunEngine, type RunEngine } from '../engines.js'
+import type { RunEngine, RunEngineSelection } from '../engines.js'
+export {
+  AUTO_ENGINE,
+  RUN_ENGINES,
+  RUN_ENGINE_CHOICES,
+  isRunEngine,
+  isRunEngineSelection,
+  assertRunEngine,
+  assertRunEngineSelection,
+  type RunEngine,
+  type RunEngineSelection,
+} from '../engines.js'
 
 export interface RunStartFlags {
   profile?: string
   follow?: boolean
   // Only the Go backend understands this; sending it to Express would be silently ignored, which is
   // why the CLI routes /api/run to Go (routes.ts).
-  engine?: RunEngine
+  engine?: RunEngineSelection
   // `wrap --heal` only — autonomous mode: auto-fix and re-run a failing DoD gate instead of
   // stopping. Ignored by every other verb.
   heal?: boolean
@@ -186,13 +196,14 @@ export async function cmdRunStart(
   // `--heal` is part of the COMMAND, not the request: the skill parses it from its own invocation
   // text (wrap/SKILL.md:45). Putting it in the body would silently do nothing.
   const heal = flags.heal === true && supportsHeal(verb) ? ' --heal' : ''
+  const engine = await resolveEngineSelection(ctx.client, flags.engine, flags.profile)
 
   const body: Record<string, unknown> = {
     prompt: `${buildRunPrompt(verb, target)}${heal}`,
     cwd: ctx.cwd,
   }
   if (flags.profile) body.configDir = flags.profile
-  if (flags.engine) body.engine = flags.engine
+  if (engine) body.engine = engine
   const res = await ctx.client.post<RunStartResponse>('/api/run', body)
   const runId = res?.runId
   if (!runId) fail('the studio accepted the run but returned no runId', EXIT.ERROR)
@@ -219,9 +230,10 @@ export async function cmdWorkflowStart(ctx: Ctx, target: string, flags: RunStart
   if (!target.trim()) fail('build needs an argument', EXIT.USAGE, 'usage: saki build <roadmap-id|path>')
   const normalized = target.trim()
   validateWorkflowTarget(ctx.cwd, normalized)
+  const engine = await resolveEngineSelection(ctx.client, flags.engine, flags.profile)
   const body: Record<string, unknown> = { cwd: ctx.cwd, target: normalized }
   if (flags.profile) body.configDir = flags.profile
-  if (flags.engine) body.engine = flags.engine
+  if (engine) body.engine = engine
   const result = await ctx.client.post<WorkflowStartResult>('/api/workflow', body)
   if (!result?.workflowId) fail('the backend accepted the workflow but returned no workflowId', EXIT.ERROR)
   emit(

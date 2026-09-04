@@ -160,23 +160,23 @@ rejects `--json` as an unknown flag.
 saki status                                  # is the backend (and, if configured, the studio) up
 saki backend start|stop|status               # manage the lazily-spawned Go backend daemon
 saki mcp                                     # start an MCP server exposing journey commands as typed tools
-saki doctor [--profile <dir>]                # can each engine run a saki-builder command, before you dispatch
+saki doctor [--profile <dir>]                # proves every installed engine
 saki init-env --engine <e> [--profile <dir>] # provision ONE engine profile, then prove it
-saki genesis "<product idea>" [--restart]    # start a product from scratch (spawns /saki-builder:genesis)
-saki roadmap init [--profile <dir>] [--engine <e>]         # scaffold tasks/roadmap.md (spawns /saki-builder:roadmap init)
+saki genesis "<product idea>" [--restart] [--engine <engine|auto>] [--profile <dir>]
+saki roadmap init [--profile <dir>] [--engine <engine|auto>]  # scaffold tasks/roadmap.md
 saki roadmap list                                           # work items in this repo
-saki roadmap add "<intent>" --feature [--profile <dir>] [--engine <e>]  # also --epic --improvement --bug (one is required)
+saki roadmap add "<intent>" --feature [--profile <dir>] [--engine <engine|auto>]  # also --epic --improvement --bug
 
-saki build  <roadmap-id|prd-path> [--follow] [--engine <e>] [--profile <dir>]   # alias
-saki pickup <roadmap-id>                       [--follow] [--engine <e>]       # alias
-saki rplan  <roadmap-id|plan-path>             [--follow] [--engine <e>]       # alias
-saki prd-review | rplan-review | approved | qa | reviewer | wrap [--follow] [--engine <e>]  # aliases too
+saki build  <roadmap-id|prd-path> [--follow] [--engine <engine|auto>] [--profile <dir>]   # alias
+saki pickup <roadmap-id>                       [--follow] [--engine <engine|auto>]       # alias
+saki rplan  <roadmap-id|plan-path>             [--follow] [--engine <engine|auto>]       # alias
+saki prd-review | rplan-review | approved | qa | reviewer | wrap [--follow] [--engine <engine|auto>]  # aliases too
 
-saki run build  <roadmap-id|prd-path> [--follow] [--engine <e>] [--profile <dir>]
+saki run build  <roadmap-id|prd-path> [--follow] [--engine <engine|auto>] [--profile <dir>]
+saki run pickup <roadmap-id>             [--follow] [--engine <engine|auto>] [--profile <dir>]
+saki run proto  <roadmap-id|prd-path>    [--follow] [--engine <engine|auto>] [--profile <dir>]
+saki run rplan  <roadmap-id|plan-path>   [--follow] [--engine <engine|auto>] [--profile <dir>]
 saki run continue <workflowId> [--option <value>]       # resume parked/awaiting workflow
-saki run pickup <roadmap-id>
-saki run proto  <roadmap-id|prd-path>
-saki run rplan  <roadmap-id|plan-path>
 saki run tail <runId>                        # stream a deliberate child; exits with its verdict
 saki run stop <runId>
 saki runs                                    # runs the backend still holds
@@ -200,6 +200,22 @@ through the same `startRun` code path so the two forms never drift in argument h
 deliberately absent from the alias list — `saki proto <id>` already means "print the URL of an
 already-rendered gallery", and one name can't mean both that and "render one". Only `wrap` accepts
 `--heal`; passing it to any other verb is a usage error, not a silent no-op.
+
+### Engine selection
+
+Every skill-spawning command accepts `--engine <engine|auto>`, where `<engine>` is `claude`,
+`codex`, `opencode`, or `omp`. An explicit engine is used without probing. `--engine auto` runs the
+same read-only binary/profile proof as `saki doctor`, then selects the first ready engine in this
+stable order: **Claude → Codex → OpenCode → OMP**. A supplied `--profile` is passed to that proof,
+so selection and spawn use the same isolated profile.
+
+Auto selection happens once before a spawn. For `saki build`, the selected concrete engine is sent to
+the workflow, so retries and resumed phases stay on the same runtime. If no engine is ready, the
+command exits `1` before spawning and reports each doctor failure with a remediation hint.
+
+`saki init-env` intentionally requires one concrete engine: it provisions a named profile rather
+than selecting among existing profiles. Run `saki doctor` after provisioning, or let a later run
+choose with `--engine auto`.
 
 ### `saki backend` — the daemon behind every other command
 
@@ -325,10 +341,13 @@ commands below and proves the resulting `$HOME/.claude`-compatible profile. An a
 taken as given (a legitimate profile lives outside the repo, e.g. `~/.claude`); only a *relative* one
 is confined to the repository.
 
-### Engines — `--engine claude|opencode|codex|omp`
+### Engines — `--engine claude|opencode|codex|omp|auto`
 
 Every run-start command takes `--engine`, choosing which agent runtime executes the run. **Omit it for
 `claude`** when using the default runtime; provision its profile first if the shared proof is not ready.
+Use `--engine auto` when the runtime is unknown: it runs the doctor proof and picks the first ready
+engine in the stable order **Claude → Codex → OpenCode → OMP**. A build pins that choice for its
+workflow retries and resumed phases; no-ready-engine failures happen before spawn.
 
 | `--engine` | Binary | How it resolves a `/saki-builder:*` command | Provision with |
 |---|---|---|---|

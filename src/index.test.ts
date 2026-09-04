@@ -397,6 +397,32 @@ describe('main', () => {
     expect(await r.code).toBe(EXIT.OK)
     expect(r.bodies[0]).toMatchObject({ engine: 'omp' })
   })
+  it('genesis accepts every engine and forwards its profile', async () => {
+    for (const engine of ['claude', 'codex', 'opencode', 'omp'] as const) {
+      const r = run(['genesis', 'an app', '--engine', engine, '--profile', `/profiles/${engine}`], {
+        '/api/run': { status: 201, body: { runId: 'r1' } },
+      })
+      expect(await r.code).toBe(EXIT.OK)
+      expect(r.bodies[0]).toMatchObject({ engine, configDir: `/profiles/${engine}` })
+    }
+  })
+  it('--engine auto probes doctor and forwards the selected engine', async () => {
+    const r = run(['build', 'tasks/prd-x.md', '--engine', 'auto', '--profile', '/profiles/work'], {
+      '/api/doctor': {
+        body: {
+          engines: [
+            { engine: 'claude', profile: '/profiles/work', status: 'failed', reason: 'missing plugin', fix: 'init' },
+            { engine: 'omp', profile: '/profiles/work', status: 'ok', reason: '', fix: '' },
+          ],
+        },
+      },
+      '/api/workflow': { status: 201, body: { workflowId: 'w1', phase: 'build', status: 'running', deduped: false } },
+    })
+    expect(await r.code).toBe(EXIT.OK)
+    expect(r.bodies[0]).toMatchObject({ engine: 'omp', configDir: '/profiles/work' })
+    expect(r.urls[0]).toContain('/api/doctor?profile=%2Fprofiles%2Fwork')
+  })
+
 
   it('omits engine entirely when not given (backend default = claude)', async () => {
     const r = run(['build', 'tasks/prd-x.md'], {

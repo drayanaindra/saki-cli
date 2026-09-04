@@ -34,9 +34,11 @@ build that never started.
 - **Node ≥ 20** (the CLI) and **Go ≥ 1.25** (to build the backend from source)
 - **An engine on PATH**: `claude`, `codex`, `opencode`, or `omp`
 - **`saki-builder` installed into that engine's profile** — `saki init-env --engine <engine>` runs the
-  fixed marketplace install and then proves the profile resolves the workflow
-- **Hermes / Oh My Pi agents**: select `--engine omp`; `saki init-env --engine omp` provisions the
-  Claude-compatible `saki-builder` plugin and proves the OMP profile before a run
+  fixed marketplace install and then proves the profile resolves the workflow; execution commands
+  can use `--engine auto` to select a ready engine
+- **Hermes / Oh My Pi agents**: select `--engine omp` explicitly, or let `--engine auto` use OMP as a
+  final fallback; `saki init-env --engine omp` provisions the Claude-compatible `saki-builder`
+  plugin and proves the OMP profile before a run
 - **`git`**, plus **`glab`** if you want `saki mr create`
 
 ## Quickstart

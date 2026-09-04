@@ -8,7 +8,7 @@ autonomous agent: branch on **exit codes**, parse `--json`, never scrape human o
 ## 0. What this is (read once)
 
 `saki` is a **thin HTTP client** over the saki studio orchestrator. It does no work itself — the
-studio spawns the agent (`claude -p` by default, or `opencode run` / `codex exec` — see
+studio spawns the agent (`claude -p` by default, or `opencode run` / `codex exec` / `omp` — see
 `--engine` in §4), tracks runs, and performs git operations. The CLI calls the same API the
 web UI calls, so the two can never disagree.
 
@@ -111,9 +111,15 @@ saki --help     # exit 0
 Claude is the default, but provision it with `saki init-env --engine claude` when its profile does
 not already prove the saki-builder plugin.
 
-**Hermes / Oh My Pi agents:** select `--engine omp` for every spawned workflow. Provision with
-`saki init-env --engine omp`; do not add a Hermes-specific flag or invoke `omp` outside saki's
-supervisor. With `--profile <dir>`, saki maps the profile to OMP's isolated `HOME`.
+For unattended work where the available runtime is not known in advance, use `--engine auto`.
+Saki runs the same binary/profile proof as `saki doctor` and selects the first ready engine in this
+order: **Claude → Codex → OpenCode → OMP**. The selection is made once before spawning; a build
+workflow keeps that concrete engine for every retry and resumed phase. A supplied `--profile <dir>`
+is used for both the proof and the spawn.
+
+**Hermes / Oh My Pi agents:** select `--engine omp` for every spawned workflow when OMP is required.
+Provision with `saki init-env --engine omp`; do not add a Hermes-specific flag or invoke `omp` outside
+the supervisor. With `--profile <dir>`, saki maps the profile to OMP's isolated `HOME`.
 
 A run executes on one agent runtime. All four resolve the studio's `/saki-builder:*` commands, but
 each has to be provisioned to do so:
@@ -123,13 +129,14 @@ each has to be provisioned to do so:
 | `claude` *(default)* | `claude` | from the message | **`saki init-env --engine claude`** (user-scope plugin install, then proof) |
 | `opencode` | `opencode` | via `--command` (its `run` never expands a slash command in the message), skills installed **bare** | **`saki init-env --engine opencode`** (runs `opencode plugin @saketek/saki-builder --global` with `XDG_CONFIG_HOME` pinned to the profile, then proves the result) |
 | `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | **`saki init-env --engine codex`** (runs the two plugin commands below, then proves the result) |
-| `omp` | `omp` | from the message, through the Claude-compatible saki-builder plugin | **`saki init-env --engine omp`** (adds the saki-builder marketplace and installs it into OMP's user plugin registry, then proves the build skill) |
+| `omp` | `omp` | from the message, through the Claude-compatible saki-builder plugin | **`saki init-env --engine omp`** (adds the saki-builder marketplace and installs it into OMP's user plugin registry, then proves the result) |
 
 ```bash
 saki init-env --engine codex [--profile <dir>]      # exit 0 == the profile really resolves the commands
 saki init-env --engine claude [--profile <dir>]     # ditto, for Claude
 saki init-env --engine opencode [--profile <dir>]   # ditto, for opencode
 saki init-env --engine omp [--profile <dir>]        # ditto, for OMP
+saki build E22 --engine auto --follow             # choose the first ready engine and verify completion
 ```
 
 `saki init-env` is the supported entry point: it provisions ONE engine's profile and then re-runs the
@@ -334,8 +341,8 @@ Add `--json` to any read command for one compact machine-readable line.
 | Flag | Meaning |
 |---|---|
 | `--follow` | for `build`, block until the workflow is verified; for direct runs, adopt the child verdict |
-| `--engine claude\|opencode\|codex\|omp` | which agent runtime executes the run. Default `claude`. See §1.5 |
-| `--profile <dir>` | pin that run's engine config dir. Default = the engine's own default profile |
+| `--engine claude\|opencode\|codex\|omp\|auto` | which agent runtime executes the run. Default `claude`; `auto` runs doctor and chooses the first ready engine in Claude → Codex → OpenCode → OMP order. See §1.5 |
+| `--profile <dir>` | pin that run's engine config dir. Auto uses the same profile for doctor and spawn. Default = the engine's own default profile |
 
 `--profile` means a different variable per engine — `CLAUDE_CONFIG_DIR=<dir>` (claude),
 `XDG_CONFIG_HOME=<dir>` (opencode, which then reads `<dir>/opencode/`), `CODEX_HOME=<dir>/codex`
@@ -348,14 +355,16 @@ all four engines side by side.
 
 ### Commands
 
-```
-saki build  <id|path> [--follow] [--engine claude|opencode|codex|omp] [--profile <dir>]   alias for `saki run build`
-saki pickup <id|path> [--follow] [--engine claude|opencode|codex|omp] [--profile <dir>]   alias for `saki run pickup`
-saki rplan  <id|path> [--follow] [--engine claude|opencode|codex|omp] [--profile <dir>]   alias for `saki run rplan`
+```text
+saki build  <id|path> [--follow] [--engine claude|opencode|codex|omp|auto] [--profile <dir>]   alias for `saki run build`
+saki pickup <id|path> [--follow] [--engine claude|opencode|codex|omp|auto] [--profile <dir>]   alias for `saki run pickup`
+saki rplan  <id|path> [--follow] [--engine claude|opencode|codex|omp|auto] [--profile <dir>]   alias for `saki run rplan`
+saki genesis "<idea>" [--restart] [--engine claude|opencode|codex|omp|auto] [--profile <dir>]
+saki roadmap init [--engine claude|opencode|codex|omp|auto] [--profile <dir>]
+saki roadmap add "<intent>" --epic|--feature|--improvement|--bug [--engine claude|opencode|codex|omp|auto] [--profile <dir>]
 saki status                                        is the studio up, and will it let me in
 saki roadmap list                                  work items in this repo
-saki roadmap add "<intent>" --epic|--feature|--improvement|--bug
-saki run <build|pickup|proto|rplan> <id|path> [--follow] [--engine <e>] [--profile <dir>]
+saki run <build|pickup|proto|rplan> <id|path> [--follow] [--engine claude|opencode|codex|omp|auto] [--profile <dir>]
 saki run continue <workflowId> [--option <value>]  resume a parked/awaiting workflow
 saki run tail <runId>                              stream one deliberate child run
 saki run stop <runId>                              stop a running run

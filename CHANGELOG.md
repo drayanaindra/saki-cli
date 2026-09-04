@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- `--engine auto` now probes `saki doctor` and selects the first ready runtime in the documented
+  Claude → Codex → OpenCode → OMP order for skill-spawning commands; builds keep that selection
+  across workflow retries.
+- `saki genesis` now accepts `--engine` and `--profile`, so every skill-spawning CLI command can
+  target Claude, Codex, OpenCode, or OMP explicitly.
 
 ## [0.5.0] - 2026-09-04
 

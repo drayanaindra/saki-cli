@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { cmdRunStart, assertRunVerb, assertRunEngine, type RunStartFlags } from '../../commands/run.js'
+import { cmdRunStart, assertRunVerb, assertRunEngineSelection, type RunStartFlags } from '../../commands/run.js'
 import { looksLikePath } from '../../commands/prd.js'
 import { EXIT, fail } from '../../exit.js'
 import { pathEscapesCwd } from '../path-guard.js'
@@ -23,9 +23,9 @@ export function registerRunStartTool(server: McpServer, makeToolCtx: ToolCtxFact
       description:
         'start a headless saki-builder step or build workflow; returns immediately with a runId or workflowId — use the CLI workflow follow/continue contract for hands-off builds',
       inputSchema: {
-        // `verb`/`engine` are z.string(), not z.enum(RUN_VERBS)/z.enum(RUN_ENGINES): an SDK enum
+        // `verb`/`engine` are z.string(), not z.enum(RUN_VERBS)/z.enum(RUN_ENGINE_CHOICES): an SDK enum
         // rejects a bad value at the PROTOCOL layer (a non-isError shape), which would fail criterion
-        // 3.2's "same validation error the CLI emits, as isError:true" — assertRunVerb/assertRunEngine
+        // 3.2's "same validation error the CLI emits, as isError:true" — assertRunVerb/assertRunEngineSelection
         // (called inside the wrapped closure below) produce that instead, at the cost of the schema not
         // advertising the valid values itself (they're listed in this description).
         verb: z.string(),
@@ -56,7 +56,7 @@ export function registerRunStartTool(server: McpServer, makeToolCtx: ToolCtxFact
           )
         }
         const flags: RunStartFlags = { profile: args.profile, heal: args.heal }
-        if (args.engine !== undefined) flags.engine = assertRunEngine(args.engine)
+        if (args.engine !== undefined) flags.engine = assertRunEngineSelection(args.engine)
         return cmdRunStart(ctx, verb, target, flags)
       }, captured)
     },

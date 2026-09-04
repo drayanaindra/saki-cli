@@ -2,13 +2,13 @@ import { emit, renderTable, type Column } from '../output.js'
 import { EXIT, fail, type ExitCode } from '../exit.js'
 import type { Ctx } from '../ctx.js'
 import type { RoadmapItem, RoadmapResult, WorkItemType } from '../types.js'
-import type { RunEngine } from '../engines.js'
+import type { RunEngineSelection } from '../engines.js'
+import { resolveEngineSelection } from '../engine-selection.js'
 
 // Same shape as RunStartFlags (commands/run.ts) — every skill spawn takes the same engine/profile
-// override, so `roadmap add`/`roadmap init` must accept them too, not just `saki run`.
 export interface RoadmapSpawnFlags {
   profile?: string
-  engine?: RunEngine
+  engine?: RunEngineSelection
 }
 
 // MIRRORS frontend/src/lib/addCommand.ts:9. Each type forces its flag, which is what skips the
@@ -74,13 +74,13 @@ export async function cmdRoadmapList(ctx: Ctx): Promise<ExitCode> {
 // No REST path here either, same reason as cmdRoadmapAdd: GET /api/roadmap is read-only, so
 // creating the file is a headless skill run, not a board write.
 export async function cmdRoadmapInit(ctx: Ctx, flags: RoadmapSpawnFlags = {}): Promise<ExitCode> {
+  const engine = await resolveEngineSelection(ctx.client, flags.engine, flags.profile)
   const body: Record<string, unknown> = {
     prompt: '/saki-builder:roadmap init',
     cwd: ctx.cwd,
   }
   if (flags.profile) body.configDir = flags.profile
-  if (flags.engine) body.engine = flags.engine
-
+  if (engine) body.engine = engine
   const res = await ctx.client.post<{ runId?: string }>('/api/run', body)
   const runId = res?.runId
   if (!runId) fail('the studio accepted the init but returned no runId', EXIT.ERROR)
@@ -118,12 +118,13 @@ export async function cmdRoadmapAdd(
     'User flow: Identify the need → use the capability → verify the outcome.',
     'Success signal: TBD — define before pickup.',
   ].join(' | ')
+  const engine = await resolveEngineSelection(ctx.client, spawnFlags.engine, spawnFlags.profile)
   const body: Record<string, unknown> = {
     prompt: `/saki-builder:add ${ADD_FLAG[type]} --autonomous ${shape}`,
     cwd: ctx.cwd,
   }
   if (spawnFlags.profile) body.configDir = spawnFlags.profile
-  if (spawnFlags.engine) body.engine = spawnFlags.engine
+  if (engine) body.engine = engine
 
   const res = await ctx.client.post<{ runId?: string }>('/api/run', body)
   const runId = res?.runId
