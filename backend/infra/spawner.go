@@ -17,16 +17,15 @@ import (
 var streamFlags = []string{"--output-format", "stream-json", "--verbose"}
 
 // buildRunScript is the FIXED shell script the detached child runs (mirrors runManager.ts:413-416),
-// now engine-aware (E26): claude (the default) keeps today's invocation; opencode runs
-// `opencode run --format json`; codex runs `codex exec --json`. SECURITY: the operator prompt is
-// passed via the $SAKI_PROMPT ENV VAR
+// now engine-aware: claude (the default) keeps today's invocation; opencode runs
+// `opencode run --format json`; codex runs `codex exec --json`; OMP runs `omp --print --mode json`.
+// SECURITY: the operator prompt is passed via the $SAKI_PROMPT ENV VAR
 // (referenced quoted here), NEVER interpolated into this string — so a prompt with quotes/newlines/
 // backticks cannot break out of the shell (no command injection). A shell (`sh -c`) is required for
-// the `> $SAKI_OUT` redirection and the `echo $? > $SAKI_EXIT` durable-exit contract; the command
+// the `> $SAKI_OUT` redirection and `echo $? > $SAKI_EXIT` durable-exit contract; the command
 // string carries no user input, so the `sh -c` is safe (the same guard apps/server documents).
 //
-// The elevated --dangerously-skip-permissions is appended ONLY for kind:"init" ON THE CLAUDE ENGINE
-// (E26: an opencode spawn never gets it — its permission model is profile-scoped). /init-env must
+// The elevated --dangerously-skip-permissions is appended ONLY for kind:"init" ON THE CLAUDE ENGINE.
 // write under the target repo's .claude/ dir, which Claude Code protects even under acceptEdits
 // headless, so skip-permissions is the only mode that lets it scaffold. It is a STATIC string keyed
 // on the run kind (never from user input), scoped to init (builds/other kinds never get it), and the
@@ -82,24 +81,19 @@ func buildRunScript(kind domain.RunKind, engine domain.RunEngine, hasCmd bool) s
 			cmd = `opencode run --print-logs --log-level ERROR --format json --auto --command "$SAKI_CMD" -- "$SAKI_PROMPT"`
 		}
 	case domain.EngineCodex:
-		// codex takes the CLAUDE shape, not opencode's. Spiked against codex-cli 0.147.0: `codex exec`
-		// DOES resolve a leading slash command that arrives in the message — including the namespaced
-		// `/saki-builder:build …` the studio emits — because codex lists $CODEX_HOME/skills/*/SKILL.md in
-		// the model's context and the model reads the matching one. Args reach the skill VERBATIM (no
-		// quote-wrapping — opencode's `--command` split and its yargs workarounds are not needed here).
-		// So the whole prompt goes as the message and no $SAKI_CMD is in play.
-		//
-		// `--dangerously-bypass-approvals-and-sandbox` is codex's headless analog of opencode's `--auto`
-		// and claude's --dangerously-skip-permissions: a journey run must write files, run tests and push,
-		// none of which the default sandbox permits, and headless codex cannot prompt for approval — so
-		// without it the run is silently confined and no-ops. Same trust model as the other two engines:
-		// the operator explicitly selected codex to run their OWN journey in their OWN repo.
-		//
-		// `--skip-git-repo-check` keeps a non-repo cwd failing on real errors rather than on codex's repo
-		// precondition. `< /dev/null` is load-bearing: `codex exec` READS STDIN when it is a pipe (it
-		// announces "Reading additional input from stdin..." and appends it as a <stdin> block), and the
-		// detached child inherits the server's stdin — without the redirect a run can block forever on it.
+		// codex takes the CLAUDE shape, not opencode's. `codex exec` resolves a leading slash command
+		// from the message because the saki-builder plugin exposes the command's skills.
 		cmd = `codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox "$SAKI_PROMPT" < /dev/null`
+	case domain.EngineOMP:
+		// OMP's print JSON mode is its machine-readable event stream. --no-session prevents a detached
+		// saki run from mutating a reusable interactive session; --no-pty avoids terminal probing;
+		// --auto-approve is required because the detached process cannot answer tool approvals.
+		cmd = `omp --print --mode json --no-session --no-pty --auto-approve -- "$SAKI_PROMPT"`
+	case domain.EngineClaude:
+		cmd = `claude -p "$SAKI_PROMPT" ` + strings.Join(streamFlags, " ")
+		if kind.IsInit() {
+			perm = " --dangerously-skip-permissions"
+		}
 	default:
 		cmd = `claude -p "$SAKI_PROMPT" ` + strings.Join(streamFlags, " ")
 		if kind.IsInit() {
@@ -192,6 +186,10 @@ func EngineBinaryCheck(engine domain.RunEngine) error {
 		if _, err := exec.LookPath("codex"); err != nil {
 			return fmt.Errorf("%w (codex)", usecase.ErrBinaryNotFound)
 		}
+	case domain.EngineOMP:
+		if _, err := exec.LookPath("omp"); err != nil {
+			return fmt.Errorf("%w (omp)", usecase.ErrBinaryNotFound)
+		}
 	}
 	return nil
 }
@@ -203,13 +201,11 @@ func EngineProfileProof(engine domain.RunEngine, configDir *string) error {
 	switch engine {
 	case domain.EngineOpencode:
 		// E26 9.4.1/9.4.2 — prove the profile carries the saki-builder plugin by reading its config.
-		// A plugin-less profile refuses loudly, no silent no-op.
 		return OpencodePluginProof(configDir)
 	case domain.EngineCodex:
-		// Same rule-4 reasoning: a codex home without the saki-builder skills still exits 0 — the model
-		// just answers that it cannot find the command — so install state is proven by READING the
-		// home, never inferred from the run.
 		return CodexSkillsProof(configDir)
+	case domain.EngineOMP:
+		return OMPPluginProof(configDir)
 	case domain.EngineClaude:
 		return ClaudeProfileProof(configDir)
 	default:
@@ -275,6 +271,7 @@ var engineMarkerPrefix = map[domain.RunEngine]string{
 	domain.EngineClaude:   "CLAUDE",
 	domain.EngineOpencode: "OPENCODE",
 	domain.EngineCodex:    "CODEX",
+	domain.EngineOMP:      "OMP",
 }
 
 // scrubProfileEnv drops inherited env that must not leak into this spawn.
@@ -312,6 +309,15 @@ func scrubProfileEnv(base []string, engine domain.RunEngine, _ bool) []string {
 		base = filterEnv(base, "XDG_CONFIG_HOME")
 	case domain.EngineCodex:
 		base = filterEnv(base, "CODEX_HOME")
+	case domain.EngineOMP:
+		// OMP's profile is a named profile, while saki's profile is a directory. For a pinned run,
+		// HOME is redirected to that directory so OMP's own ~/.omp/plugins registry and caches stay
+		// isolated. Drop every inherited OMP selector when unpinned so a parent OMP session cannot
+		// silently redirect this run.
+		base = filterEnv(base, "OMP_PROFILE")
+		base = filterEnv(base, "PI_PROFILE")
+		base = filterEnv(base, "PI_CODING_AGENT_DIR")
+		base = filterEnv(base, "PI_CONFIG_DIR")
 	default:
 		base = filterEnv(base, "CLAUDE_CONFIG_DIR")
 	}
@@ -327,9 +333,9 @@ func engineProfileEnv(engine domain.RunEngine, dir string) string {
 	case domain.EngineOpencode:
 		return "XDG_CONFIG_HOME=" + dir
 	case domain.EngineCodex:
-		// Resolved by the SAME helper CodexSkillsProof reads, so the proof and the spawn can never
-		// disagree about which home actually runs.
 		return "CODEX_HOME=" + codexHomePath(&dir)
+	case domain.EngineOMP:
+		return "HOME=" + dir
 	default:
 		return "CLAUDE_CONFIG_DIR=" + dir
 	}

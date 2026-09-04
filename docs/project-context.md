@@ -18,7 +18,7 @@
 | `saki` | `saki-backend` | HTTP, `127.0.0.1:8788` | `src/client.ts:25` | `backend/adapter/http.go:69-74` |
 | `saki` | `saki-backend` | SSE `GET /events/{id}` | `src/sse.ts:54` | `backend/adapter/http.go:74` |
 | `saki-backend` | studio `apps/server` (**out of repo**, `:8787`) | HTTP forward, only when `SAKI_UPSTREAM` is set | `backend/infra/proxy.go:31` | external — unset ⇒ standalone (`main.go:49`) |
-| `saki-backend` | agent process (`claude`/`codex`/`opencode`) | detached `exec.Command` spawn | `backend/infra/spawner.go:126` | the engine binary on `PATH` |
+| `saki-backend` | agent process (`claude`/`codex`/`opencode`/`omp`) | detached `exec.Command` spawn | `backend/infra/spawner.go:126` | the engine binary on `PATH` |
 | agent process | `saki-backend` | **NDJSON journal file on disk** (no call, no import — the process writes, the backend polls) | engine stdout → `backend/infra/journal.go:40` | `backend/infra/journalreader.go` |
 
 That last row is the one that matters most: the agent and the backend are coupled entirely through a

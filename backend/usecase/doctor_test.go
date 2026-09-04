@@ -33,8 +33,8 @@ func TestDoctorService_Check(t *testing.T) {
 	t.Run("both engines ok", func(t *testing.T) {
 		f := &fakeEngineProofs{}
 		reports := NewDoctorService(f).Check(nil)
-		if len(reports) != 3 {
-			t.Fatalf("want 3 reports, got %d", len(reports))
+		if len(reports) != 4 {
+			t.Fatalf("want 4 reports, got %d", len(reports))
 		}
 		for _, r := range reports {
 			if r.Status != "ok" {
@@ -60,8 +60,8 @@ func TestDoctorService_Check(t *testing.T) {
 	t.Run("exactly codex then opencode, all fields present", func(t *testing.T) {
 		f := &fakeEngineProofs{}
 		reports := NewDoctorService(f).Check(nil)
-		if reports[0].Engine != string(domain.EngineCodex) || reports[1].Engine != string(domain.EngineOpencode) || reports[2].Engine != string(domain.EngineClaude) {
-			t.Fatalf("order = [%s, %s, %s], want [codex, opencode, claude]", reports[0].Engine, reports[1].Engine, reports[2].Engine)
+		if reports[0].Engine != string(domain.EngineCodex) || reports[1].Engine != string(domain.EngineOpencode) || reports[2].Engine != string(domain.EngineOMP) || reports[3].Engine != string(domain.EngineClaude) {
+			t.Fatalf("order = [%s, %s, %s, %s], want [codex, opencode, omp, claude]", reports[0].Engine, reports[1].Engine, reports[2].Engine, reports[3].Engine)
 		}
 		for _, r := range reports {
 			if r.Profile == "" {
@@ -73,8 +73,8 @@ func TestDoctorService_Check(t *testing.T) {
 	t.Run("no side effects beyond BinaryCheck/ProfileProof", func(t *testing.T) {
 		f := &fakeEngineProofs{}
 		NewDoctorService(f).Check(nil)
-		if len(f.binaryCalls) != 3 || len(f.profileCalls) != 3 {
-			t.Fatalf("binaryCalls=%v profileCalls=%v — want exactly 3 of each (one per reported engine)", f.binaryCalls, f.profileCalls)
+		if len(f.binaryCalls) != 4 || len(f.profileCalls) != 4 {
+			t.Fatalf("binaryCalls=%v profileCalls=%v — want exactly 4 of each (one per reported engine)", f.binaryCalls, f.profileCalls)
 		}
 	})
 
@@ -140,6 +140,17 @@ func TestDoctorService_Check(t *testing.T) {
 			t.Errorf("opencode.Fix = %q, want %q — doctor names the same command init-env runs (slice 2)", opencode.Fix, OpencodeInstallFix)
 		}
 	})
+
+	t.Run("omp gets the rendered Fix", func(t *testing.T) {
+		f := &fakeEngineProofs{profileErr: map[domain.RunEngine]error{
+			domain.EngineOMP: errors.New("omp profile does not resolve saki-builder"),
+		}}
+		reports := NewDoctorService(f).Check(nil)
+		omp := reports[2]
+		if omp.Fix != OMPInstallFix {
+			t.Errorf("omp.Fix = %q, want %q — doctor names the same command init-env runs", omp.Fix, OMPInstallFix)
+		}
+	})
 }
 
 func TestDoctorService_Check_ClaudeFailure(t *testing.T) {
@@ -147,10 +158,10 @@ func TestDoctorService_Check_ClaudeFailure(t *testing.T) {
 		domain.EngineClaude: errors.New("claude profile does not resolve saki-builder"),
 	}}
 	reports := NewDoctorService(f).Check(nil)
-	if len(reports) != 3 {
-		t.Fatalf("want 3 reports, got %d", len(reports))
+	if len(reports) != 4 {
+		t.Fatalf("want 4 reports, got %d", len(reports))
 	}
-	claude := reports[2]
+	claude := reports[3]
 	if claude.Engine != string(domain.EngineClaude) || claude.Status != "failed" || claude.Reason != "claude profile does not resolve saki-builder" {
 		t.Errorf("claude = %+v, want failed proof report", claude)
 	}

@@ -9,9 +9,10 @@ import { EXIT, fail } from './exit.js'
 // than be reached for sideways — otherwise `saki init-env` would pull in the SSE streamer and the PRD
 // resolver transitively, just to read a three-element array.
 //
-// E26 — validated by the Go backend at the boundary too (backend/adapter/http.go parseRunEngine):
-// only these values, or empty for the claude default.
-export const RUN_ENGINES = ['claude', 'opencode', 'codex'] as const
+// OMP is the Oh My Pi headless coding-agent runtime. Its plugin discovery can load the
+// Claude-compatible saki-builder marketplace package, so it shares the canonical command prompts
+// while exposing its own JSON event stream at the backend boundary.
+export const RUN_ENGINES = ['claude', 'opencode', 'codex', 'omp'] as const
 export type RunEngine = (typeof RUN_ENGINES)[number]
 
 export function isRunEngine(v: string): v is RunEngine {

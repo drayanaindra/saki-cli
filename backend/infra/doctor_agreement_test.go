@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -53,9 +54,38 @@ func TestDoctorPreflightAgreement(t *testing.T) {
 			},
 		},
 		{
+			name: "omp provisioned", engine: domain.EngineOMP, wantOK: true,
+			fixture: func(t *testing.T, dir string) {
+				installPath := filepath.Join(dir, ".omp", "plugins", "cache", "saki-builder", "0.30.3")
+				if err := os.MkdirAll(filepath.Join(installPath, "config", "skills"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(installPath, "config", "skills", "build.md"), []byte("name: build\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				registry := filepath.Join(dir, ".omp", "plugins", "installed_plugins.json")
+				if err := os.MkdirAll(filepath.Dir(registry), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(registry, []byte(`{"plugins":{"saki-builder@saketek":[{"installPath":"`+installPath+`","version":"0.30.3"}]}}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "omp unprovisioned", engine: domain.EngineOMP, wantOK: false,
+			fixture: func(t *testing.T, dir string) {
+				registry := filepath.Join(dir, ".omp", "plugins", "installed_plugins.json")
+				if err := os.MkdirAll(filepath.Dir(registry), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(registry, []byte(`{"plugins":{}}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
 			// Criterion 2.1's own case, given agreement coverage too: preflight and doctor call the
-			// SAME EngineBinaryCheck (rule 4) — this proves the sharing holds through preflight's own
-			// SpawnSpec entry point, not only through the ProfileProof half the four cases above cover.
 			name: "codex binary absent", engine: domain.EngineCodex, wantOK: false, binaryAbsent: true,
 			fixture: func(t *testing.T, dir string) {}, // profile is irrelevant — BinaryCheck short-circuits first
 		},

@@ -3,8 +3,8 @@
 [![npm](https://img.shields.io/npm/v/%40saketek%2Fsaki-cli)](https://www.npmjs.com/package/@saketek/saki-cli)
 
 A headless build orchestrator for coding agents. `saki` drives a disciplined
-**PRD → plan → build → QA → review** journey from a terminal, spawning **claude**, **codex** or
-**opencode** and supervising the runs — no UI, no browser.
+**PRD → plan → build → QA → review** journey from a terminal, spawning **claude**, **codex**,
+**opencode** or **omp** and supervising the runs — no UI, no browser.
 
 It is a *supervisor*, not a wrapper. Runs are journalled to disk, survive a restart, retry behind a
 progress-tied circuit breaker with a hard budget, and dedupe so the same work can never double-fire.
@@ -32,8 +32,11 @@ build that never started.
 - **Supported platforms:** macOS + Linux (amd64/arm64) via the npm package; Windows is not yet
   supported (build from source only, and the daemon lifecycle is untested there)
 - **Node ≥ 20** (the CLI) and **Go ≥ 1.25** (to build the backend from source)
-- **An engine on PATH**: `claude`, `codex`, or `opencode`
-- **`saki-builder` installed into that engine's profile** — e.g. `codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git && codex plugin add saki-builder@saketek`
+- **An engine on PATH**: `claude`, `codex`, `opencode`, or `omp`
+- **`saki-builder` installed into that engine's profile** — `saki init-env --engine <engine>` runs the
+  fixed marketplace install and then proves the profile resolves the workflow
+- **Hermes / Oh My Pi agents**: select `--engine omp`; `saki init-env --engine omp` provisions the
+  Claude-compatible `saki-builder` plugin and proves the OMP profile before a run
 - **`git`**, plus **`glab`** if you want `saki mr create`
 
 ## Quickstart
@@ -119,10 +122,11 @@ Read this before running it anywhere but your own machine.
   not a default to relax.
 - **It spawns agents with their sandboxing disabled.** Headless autonomy requires it: claude gets
   `--dangerously-skip-permissions` (init only), codex `--dangerously-bypass-approvals-and-sandbox`,
-  opencode `--auto`. **An agent run can therefore write anywhere your user can.** Run it on repos you
-  control, on a machine you trust.
+  opencode `--auto`, and omp `--auto-approve`. **An agent run can therefore write anywhere your user
+  can.** Run it on repos you control, on a machine you trust.
 - **A non-claude spawn is scrubbed of the other engines' environment namespaces**, so one runtime never
-  inherits another's live session tokens.
+  inherits another's live session tokens. Pinned OMP profiles additionally redirect `HOME` to the
+  selected profile so OMP's plugin registry and cache stay isolated.
 
 Given the above: do not expose this port, and do not run it as a privileged user.
 

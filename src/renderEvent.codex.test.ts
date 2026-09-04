@@ -61,6 +61,26 @@ describe('isHiddenFrame — codex parity with the studio filter', () => {
   })
 })
 
+describe('renderEvent — OMP frames', () => {
+  it('renders the complete assistant message from message_end', () => {
+    expect(
+      renderEvent(
+        ev({
+          type: 'message_end',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'OMP finished' }] },
+        }),
+      ),
+    ).toBe('OMP finished')
+  })
+
+  it('hides OMP lifecycle frames but keeps message_end visible', () => {
+    for (const type of ['session', 'message_start', 'message_update', 'turn_end', 'agent_end']) {
+      expect(isHiddenFrame(ev({ type }))).toBe(true)
+    }
+    expect(isHiddenFrame(ev({ type: 'message_end', message: { role: 'assistant', content: [{ text: 'done' }] } }))).toBe(false)
+  })
+})
+
 describe('--engine codex', () => {
   it('is an accepted engine', () => {
     expect(isRunEngine('codex')).toBe(true)

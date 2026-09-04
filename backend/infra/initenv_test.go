@@ -37,6 +37,15 @@ func writeProvisioningFakeOpencode(t *testing.T, body string) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+func writeProvisioningFakeOMP(t *testing.T, body string) {
+	t.Helper()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "omp"), []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 // Criterion 1.4's filesystem half — the claim a usecase test with a fake provisioner CANNOT make,
 // because the fake touches no disk and the assertion would be vacuously true. This drives the REAL
 // EngineProvisioner with an empty PATH, so it is the component that could create files being tested.
@@ -250,6 +259,46 @@ exit 0
 	}
 	if !strings.Contains(got, "CODEX_HOME=|CLAUDE_CONFIG_DIR=|CODEX_TOKEN=") {
 		t.Errorf("foreign engine namespaces reached the opencode child\nrecorded:\n%s", got)
+	}
+}
+
+func TestEngineProvisionerProvisionsOMPWithFixedArgvAndIsolatedHome(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "record")
+	t.Setenv("SAKI_TEST_RECORD", out)
+	t.Setenv("HOME", "/operator-home")
+	t.Setenv("OMP_PROFILE", "operator")
+	t.Setenv("PI_PROFILE", "operator")
+	t.Setenv("CLAUDECODE", "1")
+	t.Setenv("OPENCODE", "1")
+	t.Setenv("CODEX_HOME", "/should-not-win")
+	writeProvisioningFakeOMP(t, `printf 'argv: %s\n' "$*" >> "$SAKI_TEST_RECORD"
+mkdir -p "$HOME/.omp/plugins/cache/saki-builder/config/skills"
+printf 'name: build\n' > "$HOME/.omp/plugins/cache/saki-builder/config/skills/build.md"
+printf '{"plugins":{"saki-builder@saketek":[{"installPath":"%s","version":"0.30.3"}]}}' "$HOME/.omp/plugins/cache/saki-builder" > "$HOME/.omp/plugins/installed_plugins.json"
+printf 'HOME=%s|OMP_PROFILE=%s|PI_PROFILE=%s|CLAUDECODE=%s|OPENCODE=%s|CODEX_HOME=%s\n' "$HOME" "$OMP_PROFILE" "$PI_PROFILE" "$CLAUDECODE" "$OPENCODE" "$CODEX_HOME" >> "$SAKI_TEST_RECORD"
+exit 0
+`)
+	profile := filepath.Join(t.TempDir(), "omp-profile")
+
+	if _, err := (EngineProvisioner{}).Provision(usecase.ProvisionRequest{
+		Cwd: t.TempDir(), Engine: domain.EngineOMP, Profile: &profile,
+	}); err != nil {
+		t.Fatalf("OMP provision failed: %v", err)
+	}
+
+	recorded, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(recorded)
+	for _, vec := range usecase.OMPProvisionArgv {
+		want := "argv: " + strings.Join(vec[1:], " ")
+		if !strings.Contains(got, want) {
+			t.Errorf("child argv missing %q\nrecorded:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "HOME="+profile+"|OMP_PROFILE=|PI_PROFILE=|CLAUDECODE=|OPENCODE=|CODEX_HOME=") {
+		t.Errorf("OMP child did not receive isolated/scrubbed environment; recorded:\n%s", got)
 	}
 }
 

@@ -122,7 +122,7 @@ describe('main', () => {
   it('prints the package version without starting a daemon', async () => {
     const r = run(['--version'])
     expect(await r.code).toBe(EXIT.OK)
-    expect(r.out).toEqual(['0.4.1'])
+    expect(r.out).toEqual(['0.5.0'])
     expect(r.err).toEqual([])
     expect(r.urls).toEqual([])
   })
@@ -388,6 +388,14 @@ describe('main', () => {
     })
     expect(await r.code).toBe(EXIT.OK)
     expect(r.bodies[0]).toMatchObject({ engine: 'opencode' })
+  })
+
+  it('--engine omp reaches the request body', async () => {
+    const r = run(['build', 'tasks/prd-x.md', '--engine', 'omp'], {
+      '/api/workflow': { status: 201, body: { workflowId: 'w1', phase: 'build', status: 'running', deduped: false } },
+    })
+    expect(await r.code).toBe(EXIT.OK)
+    expect(r.bodies[0]).toMatchObject({ engine: 'omp' })
   })
 
   it('omits engine entirely when not given (backend default = claude)', async () => {

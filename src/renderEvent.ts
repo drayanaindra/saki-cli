@@ -30,9 +30,11 @@ interface FrameValue {
   type?: string
   subtype?: string
   text?: string
+  toolName?: string
   part?: { type?: string; text?: string }
   item?: CodexItem
-  message?: { content?: ContentBlock[] }
+  message?: { role?: string; content?: ContentBlock[] }
+  messages?: Array<{ role?: string; content?: ContentBlock[] }>
 }
 
 // A short, human-meaningful stand-in for a tool call's arguments (the path it touched, the command
@@ -65,6 +67,15 @@ const OPENCODE_PLUMBING_TYPES = new Set(['step_start', 'step_finish', 'tool_use'
 // codex `exec --json` run-structure frames. Mirrors streamFilter.ts CODEX_PLUMBING_TYPES; `item.started`
 // is plumbing because its `item.completed` twin carries the same item once finished.
 const CODEX_PLUMBING_TYPES = new Set(['thread.started', 'turn.started', 'turn.completed', 'item.started', 'item.updated'])
+// OMP JSON mode emits lifecycle snapshots around the authoritative message_end frame. Keep the
+// snapshots out of `saki run tail`; message_end is the user-facing assistant text.
+const OMP_PLUMBING_TYPES: Record<string, true> = {
+  session: true,
+  message_start: true,
+  message_update: true,
+  turn_end: true,
+  agent_end: true,
+}
 
 // True for a frame the studio's own stream view suppresses. `renderEvent` mirrors LiveLog's
 // describeEvent, but the UI ALSO runs filterStream() alongside it (StreamPanel.tsx:7) — without
@@ -74,6 +85,7 @@ export function isHiddenFrame(ev: RunEvent): boolean {
   if (ev.line.kind !== 'json') return false
   const v = (ev.line.value ?? {}) as FrameValue
   if (typeof v !== 'object' || v === null) return false
+  if (v.type && OMP_PLUMBING_TYPES[v.type]) return true
   if (v.type && OPENCODE_PLUMBING_TYPES.has(v.type)) return true
   if (v.type && CODEX_PLUMBING_TYPES.has(v.type)) return true
   if (v.type === 'item.completed' && v.item?.type === 'reasoning') return true // codex thinking
@@ -101,9 +113,11 @@ export function renderEvent(ev: RunEvent): string {
   if (ev.line.kind === 'raw') return ev.line.text
 
   const v = (ev.line.value ?? {}) as FrameValue
-  const type = (typeof v === 'object' && v?.type) || 'event'
-
+  const type = v.type ?? 'event'
   if (type === 'assistant') return renderAssistant(v)
+  // OMP `--mode json` carries the complete assistant response at message_end.
+  if (type === 'message_end') return renderAssistant(v)
+  if (type === 'tool_stream_update') return `⚙ ${v.toolName ?? 'tool'}`
   // opencode `--format json` puts the model's message at part.text (E26).
   if (type === 'text') return v.part?.text ?? v.text ?? 'text'
   // codex `exec --json` puts the model's message — and its tool work — on `item.completed` (E26).

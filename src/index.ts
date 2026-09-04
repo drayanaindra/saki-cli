@@ -168,7 +168,7 @@ const COMMANDS: CommandDef[] = [
   },
   {
     path: ['init-env'],
-    usage: 'saki init-env --engine claude|codex|opencode [--profile <dir>]',
+    usage: 'saki init-env --engine claude|codex|opencode|omp [--profile <dir>]',
     summary: 'provision and verify one engine profile',
     flags: { ...COMMON, engine: 'string', profile: 'string' },
     run: (ctx, positionals, flags) => cmdInitEnv(ctx, positionals, flags),

@@ -280,8 +280,9 @@ a terminal gives it a closed stdin, which the process reads as an immediate EOF 
 Probes each reported engine's binary (on PATH) and profile (resolves the saki-builder commands) —
 without spawning anything. `--profile <dir>` pins which profile is checked; omitted, it's the default
 one. Exit `0` means every reported engine is ready; exit `1` means at least one is not (`--json` shows
-which, plus a `fix` command when one has been authored). This command reports `codex`, `opencode`, and `claude`. A studio-unreachable or gated-studio failure
-surfaces as the **existing** `3`/`6` codes (see the exit-code table above), not a doctor-specific one.
+which, plus a `fix` command when one has been authored). This command reports `codex`, `opencode`,
+`omp`, and `claude`. A studio-unreachable or gated-studio failure surfaces as the **existing** `3`/`6`
+codes (see the exit-code table above), not a doctor-specific one.
 
 To *fix* an engine doctor reports as not-ok, run `saki init-env --engine <e>` — doctor never repairs
 anything, by design.
@@ -316,13 +317,15 @@ $ saki init-env --engine codex --profile /tmp/p1 --json   # idempotent — nothi
 `status` is decided by the proof, never by the installer. An unprovisioned codex still exits `0` (the
 model just answers that it cannot find the command), so a child's exit code proves nothing — and a
 *failing* child proves nothing either: a repeat `codex plugin marketplace add` reports "already
-added" while the profile is perfectly fine. Only reading the profile settles it.
+added" while the profile is perfectly fine. OMP follows the same rule: only its installed-plugin
+registry plus the plugin's build skill settles readiness. Only reading the profile settles it.
 
-**Scope today: claude, codex, and opencode.** Claude provisioning runs the two user-scope commands
-below and proves the resulting `$HOME/.claude`-compatible profile. An absolute `--profile` is taken as given (a legitimate profile lives outside the repo, e.g.
-`~/.claude`); only a *relative* one is confined to the repository.
+**Scope today: claude, codex, opencode, and omp.** Claude provisioning runs the two user-scope
+commands below and proves the resulting `$HOME/.claude`-compatible profile. An absolute `--profile` is
+taken as given (a legitimate profile lives outside the repo, e.g. `~/.claude`); only a *relative* one
+is confined to the repository.
 
-### Engines — `--engine claude|opencode|codex`
+### Engines — `--engine claude|opencode|codex|omp`
 
 Every run-start command takes `--engine`, choosing which agent runtime executes the run. **Omit it for
 `claude`** when using the default runtime; provision its profile first if the shared proof is not ready.
@@ -332,6 +335,7 @@ Every run-start command takes `--engine`, choosing which agent runtime executes 
 | `claude` *(default)* | `claude` | from the message | **`saki init-env --engine claude`** (runs the user-scope marketplace/install commands, then proves the profile) |
 | `opencode` | `opencode` | via `--command` — its `run` never expands a slash command that arrives in the message | **`saki init-env --engine opencode`** (runs `opencode plugin @saketek/saki-builder --global` with `XDG_CONFIG_HOME` pinned to the profile, then proves the result) |
 | `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | **`saki init-env --engine codex`** (runs `codex plugin marketplace add …` + `codex plugin add saki-builder@saketek`, then proves the result) |
+| `omp` | `omp` | from the message, through the Claude-compatible saki-builder plugin | **`saki init-env --engine omp`** (adds the marketplace and installs `saki-builder@saketek` under OMP's user plugin registry, then proves the build skill) |
 
 ```bash
 # one-time provisioning — one command, and it verifies itself
@@ -354,18 +358,23 @@ claude plugin install saki-builder@saketek --scope user
 
 # opencode — the single command form `saki init-env --engine opencode` runs
 opencode plugin @saketek/saki-builder --global   # run with XDG_CONFIG_HOME=<dir> to target a profile
+
+# omp — for an explicit saki profile, prefix both commands with HOME=<dir>; without a prefix they use
+# OMP's default HOME.
+HOME=<dir> omp plugin marketplace add https://github.com/drayanaindra/saki-builder.git
+HOME=<dir> omp plugin install saki-builder@saketek --scope user
 ```
 
 `--profile <dir>` pins that run's engine config dir, and means a different variable per engine:
 `CLAUDE_CONFIG_DIR=<dir>` (claude), `XDG_CONFIG_HOME=<dir>` (opencode → reads `<dir>/opencode/`),
-`CODEX_HOME=<dir>/codex` (codex). One profile dir can hold all three side by side.
-
-**Known limitation — claude profile isolation is best-effort.** codex (`CODEX_HOME`) and opencode
-(`XDG_CONFIG_HOME`) genuinely isolate `plugin` state per profile; claude does not. Hand-verified
-against claude 2.1.235: `plugin marketplace add`/`plugin install` write their install record
-(`installed_plugins.json` — version, installPath, git SHA) only to the real `~/.claude`, for every
-`--scope` (`user`, `project`, `local`) and regardless of `CLAUDE_CONFIG_DIR`. `--scope
-project`/`--scope local` only add an enabled-plugin pointer to the target cwd's own
+`CODEX_HOME=<dir>/codex` (codex), `HOME=<dir>` (omp → reads `<dir>/.omp/plugins/`). One profile dir
+can hold all four side by side.
+**Known limitation — claude profile isolation is best-effort.** codex (`CODEX_HOME`), opencode
+(`XDG_CONFIG_HOME`) and OMP (`HOME`) genuinely isolate `plugin` state per profile; claude does not.
+This Claude limitation is hand-verified against claude 2.1.235: `plugin marketplace add`/`plugin install`
+write their install record (`installed_plugins.json` — version, installPath, git SHA) only to the real
+`~/.claude`, for every `--scope` (`user`, `project`, `local`) and regardless of `CLAUDE_CONFIG_DIR`.
+`--scope project`/`--scope local` only add an enabled-plugin pointer to the target cwd's own
 `.claude/settings.json` — the install itself stays global. `saki init-env --engine claude --profile
 <dir>` still pins `CLAUDE_CONFIG_DIR` (correct given codex/opencode's contract), but that pin cannot
 redirect where claude's plugin state lands — there is currently no upstream mechanism that does.

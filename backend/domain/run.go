@@ -7,19 +7,21 @@ const (
 	StatusError   = "error"
 )
 
-// RunEngine is the agent runtime a run executes on (E26). "claude" is the default and the only engine
-// the pre-E26 code path knows; "opencode" and "codex" are the second-class runtimes. Empty means claude.
+// RunEngine is the agent runtime a run executes on (E26). "claude" is the default; "opencode",
+// "codex", and "omp" are explicit runtimes. Empty means claude.
 type RunEngine string
 
-// Engine constants (journaled on the Run — the resume/successor path re-feeds it, so an opencode run
-// never silently resumes on claude — E26 §10 rule 2).
+// Engine constants (journaled on the Run — the resume/successor path re-feeds it, so a run never
+// silently resumes on a different runtime).
 const (
 	EngineClaude   RunEngine = "claude"
 	EngineOpencode RunEngine = "opencode"
 	// EngineCodex is the OpenAI Codex CLI (`codex exec`). It resolves a namespaced saki command
-	// straight from the message like claude does — NOT through opencode's `--command` split (spiked
-	// against codex-cli 0.147.0; see tasks/codex-engine-plan.md §2 S1).
+	// straight from the message like claude does — NOT through opencode's `--command` split.
 	EngineCodex RunEngine = "codex"
+	// EngineOMP is the Oh My Pi CLI (`omp --print`). It resolves the Claude-compatible saki-builder
+	// plugin from its own isolated profile.
+	EngineOMP RunEngine = "omp"
 )
 
 // ResolveEngine maps an empty/unset engine string to the claude default.

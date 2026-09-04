@@ -73,6 +73,8 @@ func ensureEngineHome(engine domain.RunEngine, profile *string) error {
 		home, label = codexHomePath(profile), "codex"
 	case domain.EngineClaude:
 		home, label = claudeHomePath(profile), "claude"
+	case domain.EngineOMP:
+		home, label = ompHomePath(profile), "omp"
 	default:
 		return nil
 	}
@@ -90,6 +92,8 @@ func provisionArgv(engine domain.RunEngine) ([][]string, bool) {
 		return usecase.CodexProvisionArgv, true
 	case domain.EngineOpencode:
 		return usecase.OpencodeProvisionArgv, true
+	case domain.EngineOMP:
+		return usecase.OMPProvisionArgv, true
 	case domain.EngineClaude:
 		return usecase.ClaudeProvisionArgv, true
 	default:
@@ -160,6 +164,8 @@ func profileFingerprint(engine domain.RunEngine, profile *string) string {
 		paths = []string{filepath.Join(home, "config.toml"), filepath.Join(home, "skills", sentinelProofSkill, "SKILL.md")}
 	case domain.EngineOpencode:
 		paths = []string{opencodeConfigPath(profile)}
+	case domain.EngineOMP:
+		paths = ompProfilePaths(profile)
 	case domain.EngineClaude:
 		installed, settings := claudeProfilePaths(profile)
 		paths = []string{installed, settings}

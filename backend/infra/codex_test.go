@@ -427,9 +427,9 @@ func TestCodexHomePath(t *testing.T) {
 	}
 }
 
-// 🔒 rule 1 — adding codex must not perturb the claude or opencode scripts. This pins all three shapes
-// side by side, so a future edit to one is visible as a diff to the others.
-func TestBuildRunScript_ThreeEngines(t *testing.T) {
+// 🔒 rule 1 — adding codex and OMP must not perturb the claude or opencode scripts. This pins all four
+// shapes side by side, so a future edit to one is visible as a diff to the others.
+func TestBuildRunScript_FourEngines(t *testing.T) {
 	claude := buildRunScript("build", domain.EngineClaude, false)
 	if !strings.HasPrefix(claude, `claude -p "$SAKI_PROMPT" --output-format stream-json --verbose`) {
 		t.Errorf("claude script drifted: %q", claude)
@@ -442,8 +442,12 @@ func TestBuildRunScript_ThreeEngines(t *testing.T) {
 	if !strings.Contains(cx, `codex exec --json`) || !strings.Contains(cx, `"$SAKI_PROMPT" < /dev/null`) {
 		t.Errorf("codex script drifted: %q", cx)
 	}
+	omp := buildRunScript("build", domain.EngineOMP, false)
+	if !strings.Contains(omp, `omp --print --mode json --no-session --no-pty --auto-approve`) {
+		t.Errorf("OMP script drifted: %q", omp)
+	}
 	// Every engine keeps the durable-exit contract.
-	for name, s := range map[string]string{"claude": claude, "opencode": oc, "codex": cx} {
+	for name, s := range map[string]string{"claude": claude, "opencode": oc, "codex": cx, "omp": omp} {
 		if !strings.Contains(s, `> "$SAKI_OUT" 2>&1; echo $? > "$SAKI_EXIT"`) {
 			t.Errorf("%s lost the durable-exit contract: %q", name, s)
 		}

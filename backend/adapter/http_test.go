@@ -878,6 +878,7 @@ func TestParseRunEngine(t *testing.T) {
 		{"claude", domain.EngineClaude, true},
 		{"opencode", domain.EngineOpencode, true},
 		{"codex", domain.EngineCodex, true},
+		{"omp", domain.EngineOMP, true},
 		{"bogus", "", false},
 		{"CLAUDE", "", false},
 		{"CODEX", "", false},
@@ -936,6 +937,27 @@ func TestPostRun_CodexEngineThreadedToSpawnAndRecord(t *testing.T) {
 	}
 	if run.Engine != domain.EngineCodex {
 		t.Fatalf("the stored run record must carry engine=codex, got %q", run.Engine)
+	}
+}
+
+func TestPostRun_OMPEngineThreadedToSpawnAndRecord(t *testing.T) {
+	sp, j, st := &fakeSpawner{}, &fakeJournal{writable: true}, newFakeStore()
+	srv := httptest.NewServer(buildHandler(nil, sp, j, st, &fakeProxy{}).Routes())
+	defer srv.Close()
+
+	res := post(t, srv, "/api/run", `{"prompt":"/saki-builder:build tasks/prd-x.md","meta":{"kind":"build","laneKey":"b1"},"engine":"omp"}`)
+	if res.StatusCode != 201 {
+		t.Fatalf("status %d, want 201", res.StatusCode)
+	}
+	if sp.lastEngine != domain.EngineOMP {
+		t.Fatalf("the SpawnSpec must carry the omp engine, got %q", sp.lastEngine)
+	}
+	run, ok := st.Get("run-1")
+	if !ok {
+		t.Fatal("run not stored")
+	}
+	if run.Engine != domain.EngineOMP {
+		t.Fatalf("the stored run record must carry engine=omp, got %q", run.Engine)
 	}
 }
 

@@ -42,12 +42,13 @@ type AwaitingDecision struct {
 }
 
 // streamMsg is the minimal stream-json shape FinalSpokenText inspects. Mirrors runManager.ts StreamMsg.
-// E26: `Part` carries opencode's `text`-frame content (spike-captured in the PRD §2 — content at
-// `part.text`).
+// E26: `Part` carries opencode's `text`-frame content; OMP carries complete assistant messages in
+// `message_end.message` (with `agent_end.messages` as a version-tolerant fallback).
 type streamMsg struct {
 	Type    string          `json:"type"`
 	Result  json.RawMessage `json:"result"`
 	Message struct {
+		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 	Content json.RawMessage `json:"content"`
@@ -55,14 +56,14 @@ type streamMsg struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"part"`
-	// Item carries codex's `item.completed` payload. Codex `exec --json` speaks a THIRD dialect: the
-	// model's spoken text arrives as an `item.completed` frame whose `item.type` is "agent_message"
-	// (tool work arrives on the same frame type as "command_execution"/"file_change", which is why the
-	// inner type must be checked and not just the outer one).
 	Item struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"item"`
+	Messages []struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	} `json:"messages"`
 }
 
 // FinalSpokenText returns the model's final spoken text for a run: the stream-json `result` event's
@@ -87,10 +88,6 @@ func FinalSpokenText(lines []ParsedLine) *string {
 	return lastAssistant
 }
 
-// applyStreamMsg folds one stream message into the running (result, lastAssistant): a `result` event
-// sets the final result text; an `assistant` event remembers its latest text block; an opencode `text`
-// event ACCUMULATES its content line-oriented (a sentinel split across frames still matches
-// line-anchored — E26 9.3.3). Extracted from FinalSpokenText verbatim.
 func applyStreamMsg(v streamMsg, result, lastAssistant *string) (*string, *string) {
 	switch v.Type {
 	case "result":
@@ -106,9 +103,6 @@ func applyStreamMsg(v streamMsg, result, lastAssistant *string) (*string, *strin
 			lastAssistant = s
 		}
 	case "text":
-		// E26 — opencode `--format json` `text` frames ARE the model's spoken text (content at
-		// `part.text`). Accumulate newline-separated so line-anchored sentinels still match across
-		// frames. Claude never emits a `text` type, so this path is opencode-only (rule 5).
 		if t := v.Part.Text; t != "" {
 			if lastAssistant != nil {
 				t = *lastAssistant + "\n" + t
@@ -116,14 +110,28 @@ func applyStreamMsg(v streamMsg, result, lastAssistant *string) (*string, *strin
 			lastAssistant = &t
 		}
 	case "item.completed":
-		// codex `exec --json` — an `agent_message` item IS a COMPLETE model message (unlike opencode's
-		// `text` chunks), so each one REPLACES the previous rather than accumulating. That matches
-		// claude's lastAssistant semantics: the final spoken message is what carries the sentinel, and a
-		// build's PRD_BUILD_COMPLETE lands in the last agent_message (verified against codex-cli 0.147.0).
-		// Neither claude nor opencode emits `item.completed`, so this path is codex-only (rule 5).
 		if v.Item.Type == "agent_message" && v.Item.Text != "" {
 			t := v.Item.Text
 			lastAssistant = &t
+		}
+	case "message_end":
+		// OMP `--mode json` emits an authoritative message_end record. Unlike message_update deltas,
+		// this contains the complete assistant message, so it is the reliable final-text boundary.
+		if v.Message.Role == "assistant" {
+			if s := assistantText(v.Message.Content); s != nil {
+				lastAssistant = s
+			}
+		}
+	case "agent_end":
+		// Keep a fallback for OMP versions that expose the final assistant only in agent_end.
+		for i := len(v.Messages) - 1; i >= 0; i-- {
+			if v.Messages[i].Role != "assistant" {
+				continue
+			}
+			if s := assistantText(v.Messages[i].Content); s != nil {
+				lastAssistant = s
+				break
+			}
 		}
 	}
 	return result, lastAssistant

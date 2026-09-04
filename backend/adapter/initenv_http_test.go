@@ -140,6 +140,25 @@ func TestInitEnvHandlerOpencodeShortCircuitsAtProof(t *testing.T) {
 	}
 }
 
+func TestInitEnvHandlerOMPShortCircuitsAtProof(t *testing.T) {
+	spy := &countingProvisioner{}
+	rec := postInitEnv(t, initEnvHandlerFor(spy).Routes(), `{"cwd":"/tmp","engine":"omp"}`, "")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (a well-formed OMP request)", rec.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["status"] != "ok" || body["changed"] != false {
+		t.Fatalf("body = %v, want ok/changed:false for an already-proven OMP profile", body)
+	}
+	if spy.calls != 0 {
+		t.Fatalf("OMP reached the provisioner %d times on an already-proven profile, want 0", spy.calls)
+	}
+}
+
 // The production wiring itself — the one test that would catch a zero-value InitEnvService reaching
 // main.go. POST /api/init-env is registered unconditionally, so nil ports would nil-panic on the
 // first real call rather than failing cleanly. Exactly TestDoctorHandler_RealWiring's rationale.

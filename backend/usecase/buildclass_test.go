@@ -205,3 +205,42 @@ func TestDetectLimit_OpencodeAuthSignal(t *testing.T) {
 		t.Fatalf("an opencode auth signal must surface via DetectLimit, got %+v", got)
 	}
 }
+
+func ompMessageEndFrame(t *testing.T, role, text string) ParsedLine {
+	return jsonLine(t, map[string]any{
+		"type": "message_end",
+		"message": map[string]any{
+			"role":    role,
+			"content": []map[string]any{{"type": "text", "text": text}},
+		},
+	})
+}
+
+func TestFinalSpokenText_OMPMessageEnd(t *testing.T) {
+	lines := []ParsedLine{
+		jsonLine(t, map[string]any{"type": "message_start", "message": map[string]any{"role": "assistant"}}),
+		ompMessageEndFrame(t, "assistant", "verified\nPRD_BUILD_COMPLETE"),
+		jsonLine(t, map[string]any{"type": "turn_end"}),
+	}
+	got := FinalSpokenText(lines)
+	if got == nil || *got != "verified\nPRD_BUILD_COMPLETE" {
+		t.Fatalf("OMP message_end must provide the complete assistant text, got %v", got)
+	}
+	if !IsBuildComplete(got) {
+		t.Fatalf("OMP message_end sentinel must classify as complete, got %q", *got)
+	}
+}
+
+func TestFinalSpokenText_OMPAgentEndFallback(t *testing.T) {
+	lines := []ParsedLine{jsonLine(t, map[string]any{
+		"type": "agent_end",
+		"messages": []map[string]any{
+			{"role": "user", "content": []map[string]any{{"type": "text", "text": "ignore"}}},
+			{"role": "assistant", "content": []map[string]any{{"type": "text", "text": "fallback"}}},
+		},
+	})}
+	got := FinalSpokenText(lines)
+	if got == nil || *got != "fallback" {
+		t.Fatalf("OMP agent_end assistant fallback must be spoken text, got %v", got)
+	}
+}

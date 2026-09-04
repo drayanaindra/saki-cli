@@ -1,6 +1,6 @@
 ---
 name: saki-cli
-description: "Operate the saki-cli headless build orchestrator from an agent: preflight engines, launch durable PRD or Plan workflows, follow or reattach safely, handle parked decisions, and verify completion."
+description: "Operate the saki-cli headless build orchestrator from an agent: preflight engines, launch durable PRD or Plan workflows, follow or reattach safely, handle parked decisions, and verify completion across Claude, Codex, OpenCode, and OMP/Hermes."
 ---
 
 # saki-cli operation
@@ -15,8 +15,8 @@ installed in the selected engine profile. The backend owns workflow state and jo
   human output or an HTTP 200 alone.
 - A build is successful only when the workflow is durably `done` with verified completion evidence.
   A child engine turn exiting zero is not enough.
-- Use the existing `--follow` flag for a synchronous agent run. No extra Hermes-specific parameter
-  is required, and do not invent one.
+- When this skill runs under Hermes/Oh My Pi, select `--engine omp`. There is no Hermes-specific
+  parameter; do not invent one or bypass the supervisor by invoking `omp` directly.
 - Retrying the same target is safe: the backend deduplicates the workflow lane. Do not start a
   second command with a different ad-hoc id merely because the first command is still running.
 - Keep the backend loopback-only. Never add a bind-address, CORS, or remote-access override.
@@ -34,14 +34,40 @@ saki roadmap list --json
 ```
 
 For an engine-specific run, use a provisioned profile and verify the selected engine resolves the
-`saki-builder` commands. Prefer an explicit profile when the agent has isolated configuration:
+`saki-builder` commands. `saki doctor` reports all supported engines; it does not take an engine
+selector. Prefer an explicit profile when the agent has isolated configuration:
 
 ```bash
-saki doctor --engine codex --profile /absolute/profile --json
+saki doctor --profile /absolute/profile --json
+```
+
+For Hermes/Oh My Pi, provision and dispatch through OMP:
+
+```bash
+saki init-env --engine omp --profile /absolute/profile
+saki build <target> --engine omp --profile /absolute/profile --follow --json
 ```
 
 If preflight exits `3`, repair backend reachability. If an engine is unprovisioned or cannot
 resolve `saki-builder`, stop and report the exact provisioning command; do not claim a build ran.
+
+## Hermes / Oh My Pi
+
+Hermes is the OMP runtime. Use the same durable saki workflow as any other engine, with
+`--engine omp`; the backend owns orchestration state, retries, journaling, and completion evidence.
+
+Before the first run:
+
+```bash
+saki doctor --json
+saki init-env --engine omp --json
+```
+
+OMP profile isolation maps `--profile <dir>` to `HOME=<dir>`, so the OMP plugin registry and cache
+stay inside the selected profile. The `saki-builder` plugin must be installed and its `build` skill
+must be proven before a spawn is allowed. Provider credentials remain the operator's responsibility;
+never paste credentials into prompts or commit them to a profile.
+
 
 ## Main workflow
 

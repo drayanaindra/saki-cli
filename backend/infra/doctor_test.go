@@ -24,16 +24,13 @@ func writeCodexProfile(t *testing.T, dir, content string) {
 	}
 }
 
-// putBinariesOnPath writes a minimal executable `codex` AND `opencode` into one temp dir and sets
-// PATH to it, so EngineBinaryCheck succeeds for both — a caller-review finding: a test that leaves
-// the binary check failing means it short-circuits (checkOne, usecase/doctor.go) BEFORE reaching
-// ProfileProof, so the file it means to prove read-only is never actually opened. This is what makes
-// TestDoctorService_Check_LeavesFilesystemUntouched exercise the real read path, not skip past it.
+// putBinariesOnPath writes minimal executables for every non-Claude runtime and sets PATH so
+// EngineBinaryCheck succeeds; this lets the read-only test exercise each real ProfileProof.
 func putBinariesOnPath(t *testing.T) {
 	t.Helper()
 	bin := t.TempDir()
 	script := "#!/bin/sh\nexit 0\n"
-	for _, name := range []string{"codex", "opencode"} {
+	for _, name := range []string{"codex", "opencode", "omp"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -48,7 +45,7 @@ func TestEngineProofChecker_DelegatesToSharedFuncs(t *testing.T) {
 	t.Run("BinaryCheck matches EngineBinaryCheck", func(t *testing.T) {
 		t.Setenv("PATH", t.TempDir()) // neither binary present
 		var checker EngineProofChecker
-		for _, engine := range []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode} {
+		for _, engine := range []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode, domain.EngineOMP} {
 			want := EngineBinaryCheck(engine)
 			got := checker.BinaryCheck(engine)
 			if (want == nil) != (got == nil) || (want != nil && got != nil && want.Error() != got.Error()) {
@@ -60,7 +57,7 @@ func TestEngineProofChecker_DelegatesToSharedFuncs(t *testing.T) {
 	t.Run("ProfileProof matches EngineProfileProof", func(t *testing.T) {
 		dir := t.TempDir() // no opencode.json / codex/config.toml -> both proofs fail
 		var checker EngineProofChecker
-		for _, engine := range []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode} {
+		for _, engine := range []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode, domain.EngineOMP} {
 			want := EngineProfileProof(engine, &dir)
 			got := checker.ProfileProof(engine, &dir)
 			if (want == nil) != (got == nil) || (want != nil && got != nil && want.Error() != got.Error()) {
@@ -87,10 +84,21 @@ func TestDoctorService_Check_LeavesFilesystemUntouched(t *testing.T) {
 	writeCodexProfile(t, profileDir, "")                 // an empty, unregistered config.toml
 	writeOpencodeProfile(t, profileDir, `{"plugin":[]}`) // a valid-JSON, plugin-less config
 	writeClaudeProfile(t, profileDir, `{"plugins":{}}`, `{"enabledPlugins":{}}`)
+	ompRegistryPath := ompInstalledPluginsPath(&profileDir)
+	if err := os.MkdirAll(filepath.Dir(ompRegistryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ompRegistryPath, []byte(`{"plugins":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	codexPath := filepath.Join(profileDir, "codex", "config.toml")
 	opencodePath := filepath.Join(profileDir, "opencode", "opencode.json")
 	claudeInstalledPath, claudeSettingsPath := claudeProfilePaths(&profileDir)
+	ompBefore, err := os.ReadFile(ompRegistryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	claudeInstalledBefore, err := os.ReadFile(claudeInstalledPath)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +123,7 @@ func TestDoctorService_Check_LeavesFilesystemUntouched(t *testing.T) {
 	// resolve" wording only appears in CodexSkillsProof/OpencodePluginProof's own error text, so its
 	// presence is direct proof the profile-reading code path actually ran, not just that Check failed.
 	for _, r := range reports {
-		if r.Status != "failed" || (r.Engine != string(domain.EngineClaude) && !strings.Contains(r.Reason, "does not resolve @saketek/saki-builder")) || (r.Engine == string(domain.EngineClaude) && !strings.Contains(r.Reason, "no supported installed plugin")) {
+		if r.Status != "failed" || (r.Engine != string(domain.EngineClaude) && r.Engine != string(domain.EngineOMP) && !strings.Contains(r.Reason, "does not resolve @saketek/saki-builder")) || (r.Engine == string(domain.EngineClaude) && !strings.Contains(r.Reason, "no supported installed plugin")) || (r.Engine == string(domain.EngineOMP) && !strings.Contains(r.Reason, "no installed plugin with saki-builder@saketek")) {
 			t.Fatalf("%s: want status=failed with a ProfileProof (not BinaryCheck) reason, got %+v", r.Engine, r)
 		}
 	}
@@ -145,6 +153,13 @@ func TestDoctorService_Check_LeavesFilesystemUntouched(t *testing.T) {
 	}
 	if !bytes.Equal(opencodeBefore, opencodeAfter) {
 		t.Fatalf("opencode profile was mutated by a doctor run — before=%q after=%q", opencodeBefore, opencodeAfter)
+	}
+	ompAfter, err := os.ReadFile(ompRegistryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(ompBefore, ompAfter) {
+		t.Fatalf("OMP plugin registry was mutated by a doctor run — before=%q after=%q", ompBefore, ompAfter)
 	}
 
 	entries, err := os.ReadDir(runsDir)

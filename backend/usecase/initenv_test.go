@@ -75,6 +75,16 @@ func TestInitEnvServiceClaudeAlreadyProvenSkipsAdapter(t *testing.T) {
 	}
 }
 
+func TestInitEnvServiceAcceptsOMP(t *testing.T) {
+	dir := t.TempDir()
+	adapter := &spyProvisioner{changed: true}
+	proofs := &stubProofs{}
+	status, body := NewInitEnvService(adapter, proofs).Provision(ProvisionRequest{Cwd: dir, Engine: domain.EngineOMP})
+	if status != 200 || body["status"] != string(domain.InitEnvStatusOK) || adapter.calls != 0 {
+		t.Fatalf("a proven OMP profile must be accepted without provisioning: status=%d body=%v adapterCalls=%d", status, body, adapter.calls)
+	}
+}
+
 func TestInitEnvServiceClaudeProvisionsThenProves(t *testing.T) {
 	dir := t.TempDir()
 	adapter := &spyProvisioner{changed: true}

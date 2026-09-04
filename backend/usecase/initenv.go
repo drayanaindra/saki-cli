@@ -64,7 +64,7 @@ func (s InitEnvService) Provision(req ProvisionRequest) (int, map[string]any) {
 		return status, invalid
 	}
 	base := newInitEnvResult(req)
-	if req.Engine != domain.EngineCodex && req.Engine != domain.EngineOpencode && req.Engine != domain.EngineClaude {
+	if !isKnownEngine(req.Engine) {
 		base["reason"] = ErrInitEnvUnsupported.Error()
 		return http200, base
 	}
@@ -119,7 +119,7 @@ func normalizeProvisionRequest(req ProvisionRequest) (ProvisionRequest, int, map
 		return req, 422, map[string]any{"error": "cwd must be an existing directory"}
 	}
 	if !isKnownEngine(req.Engine) {
-		return req, 422, map[string]any{"error": "engine must be one of claude, codex, opencode"}
+		return req, 422, map[string]any{"error": "engine must be one of claude, codex, opencode, omp"}
 	}
 	if req.Profile != nil && *req.Profile != "" {
 		if !filepath.IsAbs(*req.Profile) {
@@ -135,7 +135,7 @@ func normalizeProvisionRequest(req ProvisionRequest) (ProvisionRequest, int, map
 
 func isKnownEngine(engine domain.RunEngine) bool {
 	switch engine {
-	case domain.EngineCodex, domain.EngineOpencode, domain.EngineClaude:
+	case domain.EngineCodex, domain.EngineOpencode, domain.EngineOMP, domain.EngineClaude:
 		return true
 	default:
 		return false
@@ -170,6 +170,8 @@ func engineInstallFix(engine domain.RunEngine) string {
 		return CodexInstallFix
 	case domain.EngineOpencode:
 		return OpencodeInstallFix
+	case domain.EngineOMP:
+		return OMPInstallFix
 	case domain.EngineClaude:
 		return ClaudeInstallFix
 	default:
@@ -240,6 +242,8 @@ func profilePath(engine domain.RunEngine, profile *string) string {
 		return filepath.Join(home, ".codex")
 	case domain.EngineOpencode:
 		return filepath.Join(home, ".config", "opencode")
+	case domain.EngineOMP:
+		return filepath.Join(home, ".omp", "plugins")
 	case domain.EngineClaude:
 		return filepath.Join(home, ".claude")
 	default:
@@ -254,6 +258,13 @@ func profilePath(engine domain.RunEngine, profile *string) string {
 var CodexProvisionArgv = [][]string{
 	{"codex", "plugin", "marketplace", "add", "https://github.com/drayanaindra/saki-builder.git"},
 	{"codex", "plugin", "add", "saki-builder@saketek"},
+}
+
+// OMPProvisionArgv is THE OMP engine mapping. OMP accepts the Claude-compatible marketplace
+// manifest used by saki-builder and stores the installed plugin under its own ~/.omp tree.
+var OMPProvisionArgv = [][]string{
+	{"omp", "plugin", "marketplace", "add", "https://github.com/drayanaindra/saki-builder.git"},
+	{"omp", "plugin", "install", "saki-builder@saketek", "--scope", "user"},
 }
 
 // OpencodeProvisionArgv is THE opencode engine mapping — the single place the plugin id appears.

@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-04
+
+### Added
+
+- Added Oh My Pi (`omp`) as a fourth engine, including isolated profile provisioning, doctor
+  verification, JSON event rendering, and Hermes agent guidance.
+
 ## [0.4.1] - 2026-09-02
 
 ### Fixed
@@ -76,8 +83,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **I3** — `saki doctor` / spawn-preflight now verify per-skill coverage, not just plugin presence,
   catching a stale or partial `saki-builder` install before a run instead of after.
 
-[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/drayanaindra/saki-cli/releases/tag/v0.4.0
+[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/drayanaindra/saki-cli/releases/tag/v0.5.0
+[0.4.1]: https://github.com/drayanaindra/saki-cli/compare/v0.4.0...v0.4.1
 [0.3.1]: https://github.com/drayanaindra/saki-cli/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/drayanaindra/saki-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/drayanaindra/saki-cli/compare/v0.1.0...v0.2.0

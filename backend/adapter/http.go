@@ -663,10 +663,10 @@ func (h Handler) postRun(w http.ResponseWriter, r *http.Request) {
 // (or empty = the claude default) are accepted; anything else is a 422.
 func parseRunEngine(e domain.RunEngine) (domain.RunEngine, error) {
 	switch domain.ResolveEngine(e) {
-	case domain.EngineClaude, domain.EngineOpencode, domain.EngineCodex:
+	case domain.EngineClaude, domain.EngineOpencode, domain.EngineCodex, domain.EngineOMP:
 		return domain.ResolveEngine(e), nil
 	default:
-		return "", fmt.Errorf("engine must be one of %q, %q, %q", domain.EngineClaude, domain.EngineOpencode, domain.EngineCodex)
+		return "", fmt.Errorf("engine must be one of %q, %q, %q, %q", domain.EngineClaude, domain.EngineOpencode, domain.EngineCodex, domain.EngineOMP)
 	}
 }
 

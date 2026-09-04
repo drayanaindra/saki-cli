@@ -111,7 +111,11 @@ saki --help     # exit 0
 Claude is the default, but provision it with `saki init-env --engine claude` when its profile does
 not already prove the saki-builder plugin.
 
-A run executes on one agent runtime. All three resolve the studio's `/saki-builder:*` commands, but
+**Hermes / Oh My Pi agents:** select `--engine omp` for every spawned workflow. Provision with
+`saki init-env --engine omp`; do not add a Hermes-specific flag or invoke `omp` outside saki's
+supervisor. With `--profile <dir>`, saki maps the profile to OMP's isolated `HOME`.
+
+A run executes on one agent runtime. All four resolve the studio's `/saki-builder:*` commands, but
 each has to be provisioned to do so:
 
 | `--engine` | Binary | How it resolves a saki command | Provision with |
@@ -119,16 +123,18 @@ each has to be provisioned to do so:
 | `claude` *(default)* | `claude` | from the message | **`saki init-env --engine claude`** (user-scope plugin install, then proof) |
 | `opencode` | `opencode` | via `--command` (its `run` never expands a slash command in the message), skills installed **bare** | **`saki init-env --engine opencode`** (runs `opencode plugin @saketek/saki-builder --global` with `XDG_CONFIG_HOME` pinned to the profile, then proves the result) |
 | `codex` | `codex` | from the message, like claude — via the saki-builder plugin's skills | **`saki init-env --engine codex`** (runs the two plugin commands below, then proves the result) |
+| `omp` | `omp` | from the message, through the Claude-compatible saki-builder plugin | **`saki init-env --engine omp`** (adds the saki-builder marketplace and installs it into OMP's user plugin registry, then proves the build skill) |
 
 ```bash
 saki init-env --engine codex [--profile <dir>]      # exit 0 == the profile really resolves the commands
 saki init-env --engine claude [--profile <dir>]     # ditto, for Claude
 saki init-env --engine opencode [--profile <dir>]   # ditto, for opencode
+saki init-env --engine omp [--profile <dir>]        # ditto, for OMP
 ```
 
 `saki init-env` is the supported entry point: it provisions ONE engine's profile and then re-runs the
 same proof `saki doctor` uses, so exit `0` means the profile is genuinely ready — an installer's own
-exit code is never the signal. It covers Claude, Codex, and OpenCode. The equivalent by hand:
+exit code is never the signal. It covers Claude, Codex, OpenCode and OMP. The equivalent by hand:
 
 ```bash
 codex plugin marketplace add https://github.com/drayanaindra/saki-builder.git
@@ -141,13 +147,18 @@ claude plugin install saki-builder@saketek --scope user
 
 # opencode — the single command form, run with XDG_CONFIG_HOME=<dir> to target a profile
 opencode plugin @saketek/saki-builder --global
-```
 
+# omp — OMP stores user plugins below $HOME/.omp/plugins. For an explicit saki profile, prefix both
+# commands with HOME=<dir>; without a prefix they use OMP's default HOME.
+HOME=<dir> omp plugin marketplace add https://github.com/drayanaindra/saki-builder.git
+HOME=<dir> omp plugin install saki-builder@saketek --scope user
+
+```
 The plugin carries the skills, agents and hooks. **Do not also symlink them** — that creates a second,
 version-skewed copy of every skill. `scripts/install-codex-skills.sh` is a checker; its `--symlink`
 fallback exists only for an ephemeral pinned profile where a marketplace plugin is impractical.
 
-**Known limitation — claude profile isolation is best-effort.** Unlike codex/opencode, claude's
+**Known limitation — claude profile isolation is best-effort.** Unlike codex/opencode/omp, claude's
 `plugin marketplace add`/`plugin install` write their install record only to the real `~/.claude`,
 for every `--scope` and regardless of `CLAUDE_CONFIG_DIR` (hand-verified against claude 2.1.235).
 `saki init-env --engine claude --profile <dir>` still pins `CLAUDE_CONFIG_DIR`, but that pin cannot
@@ -323,12 +334,13 @@ Add `--json` to any read command for one compact machine-readable line.
 | Flag | Meaning |
 |---|---|
 | `--follow` | for `build`, block until the workflow is verified; for direct runs, adopt the child verdict |
-| `--engine claude\|opencode\|codex` | which agent runtime executes the run. Default `claude`. See §1.5 |
+| `--engine claude\|opencode\|codex\|omp` | which agent runtime executes the run. Default `claude`. See §1.5 |
 | `--profile <dir>` | pin that run's engine config dir. Default = the engine's own default profile |
 
 `--profile` means a different variable per engine — `CLAUDE_CONFIG_DIR=<dir>` (claude),
 `XDG_CONFIG_HOME=<dir>` (opencode, which then reads `<dir>/opencode/`), `CODEX_HOME=<dir>/codex`
-(codex). One profile dir can therefore carry all three engines side by side.
+(codex), `HOME=<dir>` (omp, which reads `<dir>/.omp/plugins/`). One profile dir can therefore carry
+all four engines side by side.
 
 | Env var | Default | Notes |
 |---|---|---|
@@ -337,9 +349,9 @@ Add `--json` to any read command for one compact machine-readable line.
 ### Commands
 
 ```
-saki build  <id|path> [--follow] [--engine claude|opencode|codex] [--profile <dir>]   alias for `saki run build`
-saki pickup <id|path> [--follow] [--engine claude|opencode|codex] [--profile <dir>]   alias for `saki run pickup`
-saki rplan  <id|path> [--follow] [--engine claude|opencode|codex] [--profile <dir>]   alias for `saki run rplan`
+saki build  <id|path> [--follow] [--engine claude|opencode|codex|omp] [--profile <dir>]   alias for `saki run build`
+saki pickup <id|path> [--follow] [--engine claude|opencode|codex|omp] [--profile <dir>]   alias for `saki run pickup`
+saki rplan  <id|path> [--follow] [--engine claude|opencode|codex|omp] [--profile <dir>]   alias for `saki run rplan`
 saki status                                        is the studio up, and will it let me in
 saki roadmap list                                  work items in this repo
 saki roadmap add "<intent>" --epic|--feature|--improvement|--bug

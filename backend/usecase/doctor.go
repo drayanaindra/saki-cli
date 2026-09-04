@@ -3,24 +3,18 @@ package usecase
 import "github.com/drayanaindra/saki-cli/backend/domain"
 
 // DoctorEngines is the FIXED ordered set of engines `saki doctor` reports on.
-var DoctorEngines = []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode, domain.EngineClaude}
+var DoctorEngines = []domain.RunEngine{domain.EngineCodex, domain.EngineOpencode, domain.EngineOMP, domain.EngineClaude}
 
 // CodexInstallFix is codex's complete two-line remediation — the SAME text infra.CodexSkillsProof
 // embeds in its spawn-refusal error (backend/infra/codex.go), so the operator-facing error and
-// doctor's Fix field can never drift out of sync (F2 slice 2, criterion 2.3). Lives here, not in
-// infra, so infra can depend on it (infra already imports usecase) without usecase depending back on
-// infra — the hexagonal layering direction stays intact.
-// DERIVED from CodexProvisionArgv (initenv.go) — the same mapping `saki init-env` executes. PRD §11
-// keeps installer command forms in ONE place: before F6 this text was a second, hand-written copy of
-// those argv vectors, so a marketplace/plugin-id move would have made doctor's advice and init-env's
-// behaviour disagree silently. Rendering it from the mapping makes that impossible by construction.
+// doctor's Fix field can never drift out of sync.
 var CodexInstallFix = renderProvisionArgv(CodexProvisionArgv)
 
-// OpencodeInstallFix is opencode's single-line remediation — the SAME text init-env executes, rendered
-// from OpencodeProvisionArgv (initenv.go) so doctor's advice and init-env's behaviour can never drift
-// apart (PRD §11). Added in F6 slice 2, the "one string covers both engines" trigger recorded in
-// slice-1's Annotation Space: doctor now names the same opencode command init-env runs.
+// OpencodeInstallFix is opencode's single-line remediation rendered from its installer mapping.
 var OpencodeInstallFix = renderProvisionArgv(OpencodeProvisionArgv)
+
+// OMPInstallFix is OMP's two-step marketplace remediation rendered from its installer mapping.
+var OMPInstallFix = renderProvisionArgv(OMPProvisionArgv)
 
 // ClaudeInstallFix is Claude's user-scope remediation rendered from the exact init-env argv.
 var ClaudeInstallFix = renderProvisionArgv(ClaudeProvisionArgv)

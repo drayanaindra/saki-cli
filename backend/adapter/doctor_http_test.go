@@ -31,10 +31,10 @@ func doctorHandlerFor(f usecase.EngineProofs) Handler {
 
 func assertDoctorEngines(t *testing.T, engines []domain.EngineReport) {
 	t.Helper()
-	if len(engines) != 3 {
-		t.Fatalf("engines = %+v, want 3 entries", engines)
+	if len(engines) != 4 {
+		t.Fatalf("engines = %+v, want 4 entries", engines)
 	}
-	want := []string{"codex", "opencode", "claude"}
+	want := []string{"codex", "opencode", "omp", "claude"}
 	for i, engine := range engines {
 		if engine.Engine != want[i] {
 			t.Errorf("engines[%d].Engine = %q, want %q", i, engine.Engine, want[i])
@@ -62,8 +62,8 @@ func TestDoctorHandler_ReturnsEngines(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertDoctorEngines(t, body.Engines)
-	if f.profileCalls != 3 {
-		t.Fatalf("profile calls = %d, want 3", f.profileCalls)
+	if f.profileCalls != 4 {
+		t.Fatalf("profile calls = %d, want 4", f.profileCalls)
 	}
 
 	res2, err := http.Get(srv.URL + "/api/doctor?profile=/tmp/x")
@@ -106,8 +106,8 @@ func TestDoctorHandler_RealWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertDoctorEngines(t, body.Engines)
-	if body.Engines[0].Status != "failed" || body.Engines[1].Status != "failed" || body.Engines[2].Status != "failed" {
-		t.Fatalf("engines = %+v, want all three reports failed for missing profiles/binaries", body.Engines)
+	if body.Engines[0].Status != "failed" || body.Engines[1].Status != "failed" || body.Engines[2].Status != "failed" || body.Engines[3].Status != "failed" {
+		t.Fatalf("engines = %+v, want all four reports failed for missing profiles/binaries", body.Engines)
 	}
 }
 
