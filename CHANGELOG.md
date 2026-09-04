@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.6.0] - 2026-09-05
+
+### Added
+
 - `--engine auto` now probes `saki doctor` and selects the first ready runtime in the documented
   Claude → Codex → OpenCode → OMP order for skill-spawning commands; builds keep that selection
   across workflow retries.
@@ -88,7 +93,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **I3** — `saki doctor` / spawn-preflight now verify per-skill coverage, not just plugin presence,
   catching a stale or partial `saki-builder` install before a run instead of after.
 
-[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/drayanaindra/saki-cli/releases/tag/v0.6.0
 [0.5.0]: https://github.com/drayanaindra/saki-cli/releases/tag/v0.5.0
 [0.4.1]: https://github.com/drayanaindra/saki-cli/compare/v0.4.0...v0.4.1
 [0.3.1]: https://github.com/drayanaindra/saki-cli/compare/v0.3.0...v0.3.1
