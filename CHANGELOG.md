@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-05
+
+### Fixed
+
+- Release verification now derives the CLI version assertion from `package.json`, so future version
+  bumps do not fail the release workflow.
+
 ## [0.6.0] - 2026-09-05
 
 ### Added
@@ -93,7 +100,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **I3** — `saki doctor` / spawn-preflight now verify per-skill coverage, not just plugin presence,
   catching a stale or partial `saki-builder` install before a run instead of after.
 
-[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/drayanaindra/saki-cli/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/drayanaindra/saki-cli/releases/tag/v0.6.1
 [0.6.0]: https://github.com/drayanaindra/saki-cli/releases/tag/v0.6.0
 [0.5.0]: https://github.com/drayanaindra/saki-cli/releases/tag/v0.5.0
 [0.4.1]: https://github.com/drayanaindra/saki-cli/compare/v0.4.0...v0.4.1
